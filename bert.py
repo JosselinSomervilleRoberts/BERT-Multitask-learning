@@ -99,8 +99,7 @@ class BertLayer(nn.Module):
     dropout: the dropout to be applied 
     ln_layer: the layer norm to be applied
     """
-    # Hint: Remember that BERT applies to the output of each sub-layer, before it is added to the sub-layer input and normalized 
-    ### TODO
+    # Hint: Remember that BERT applies to the output of each sub-layer, before it is added to the sub-layer input and normalized
     x = input + dense_layer(dropout(output))
     x = ln_layer(x)
     return x
