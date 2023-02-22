@@ -94,7 +94,10 @@ class BertLayer(nn.Module):
     """
     # Hint: Remember that BERT applies to the output of each sub-layer, before it is added to the sub-layer input and normalized 
     ### TODO
-    raise NotImplementedError
+    x = input + dense_layer(dropout(output))
+    x = ln_layer(x)
+    return x
+
 
 
   def forward(self, hidden_states, attention_mask):
