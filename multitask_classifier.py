@@ -75,10 +75,10 @@ class MultitaskBERT(nn.Module):
         # (e.g., by adding other layers).
         
         # Step 1: Get the BERT embeddings
-        embeddings = self.bert(input_ids, attention_mask)[0]
+        bert_output = self.bert(input_ids, attention_mask)
 
         # Step 2: Get the [CLS] token embeddings
-        cls_embeddings = embeddings[:, 0, :]
+        cls_embeddings = bert_output['pooler_output']
         return cls_embeddings
 
 
