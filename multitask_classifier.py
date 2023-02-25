@@ -45,6 +45,7 @@ class MultitaskBERT(nn.Module):
         super(MultitaskBERT, self).__init__()
         # You will want to add layers here to perform the downstream tasks.
         # Pretrain mode does not require updating bert paramters.
+        print('Loading BERT model from', args.pretrained_model_name)
         self.bert = BertModel.from_pretrained(args.pretrained_model_name)
         for param in self.bert.parameters():
             if config.option == 'pretrain':
