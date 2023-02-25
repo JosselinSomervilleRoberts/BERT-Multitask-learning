@@ -45,7 +45,7 @@ class MultitaskBERT(nn.Module):
         super(MultitaskBERT, self).__init__()
         # You will want to add layers here to perform the downstream tasks.
         # Pretrain mode does not require updating bert paramters.
-        self.bert = BertModel.from_pretrained('bert-base-uncased')
+        self.bert = BertModel.from_pretrained(args.pretrained_model_name)
         for param in self.bert.parameters():
             if config.option == 'pretrain':
                 param.requires_grad = False
@@ -172,7 +172,8 @@ def train_multitask(args):
               'num_labels': num_labels,
               'hidden_size': 768,
               'data_dir': '.',
-              'option': args.option}
+              'option': args.option,
+              'pretrained_model_name': args.pretrained_model_name}
 
     config = SimpleNamespace(**config)
 
@@ -252,6 +253,7 @@ def get_args():
     parser.add_argument("--option", type=str,
                         help='pretrain: the BERT parameters are frozen; finetune: BERT parameters are updated',
                         choices=('pretrain', 'finetune'), default="pretrain")
+    parser.add_argument("--pretrained_model_name", type=str, default="bert-base-uncased")
     parser.add_argument("--use_gpu", action='store_true')
 
     parser.add_argument("--sst_dev_out", type=str, default="predictions/sst-dev-output.csv")
@@ -262,7 +264,6 @@ def get_args():
 
     parser.add_argument("--sts_dev_out", type=str, default="predictions/sts-dev-output.csv")
     parser.add_argument("--sts_test_out", type=str, default="predictions/sts-test-output.csv")
-
     # hyper parameters
     parser.add_argument("--batch_size", help='sst: 64, cfimdb: 8 can fit a 12GB GPU', type=int, default=8)
     parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
