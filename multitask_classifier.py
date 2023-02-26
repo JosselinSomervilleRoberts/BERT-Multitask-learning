@@ -13,7 +13,7 @@ from tqdm import tqdm
 from datasets import SentenceClassificationDataset, SentencePairDataset, \
     load_multitask_data, load_multitask_test_data
 
-from evaluation import model_eval_sst, test_model_multitask
+from evaluation import model_eval_multitask, test_model_multitask
 
 
 TQDM_DISABLE=True
@@ -159,13 +159,29 @@ def train_multitask(args):
     sst_train_data, num_labels,para_train_data, sts_train_data = load_multitask_data(args.sst_train,args.para_train,args.sts_train, split ='train')
     sst_dev_data, num_labels,para_dev_data, sts_dev_data = load_multitask_data(args.sst_dev,args.para_dev,args.sts_dev, split ='train')
 
+    # SST: Sentiment classification
     sst_train_data = SentenceClassificationDataset(sst_train_data, args)
     sst_dev_data = SentenceClassificationDataset(sst_dev_data, args)
-
     sst_train_dataloader = DataLoader(sst_train_data, shuffle=True, batch_size=args.batch_size,
                                       collate_fn=sst_train_data.collate_fn)
     sst_dev_dataloader = DataLoader(sst_dev_data, shuffle=False, batch_size=args.batch_size,
                                     collate_fn=sst_dev_data.collate_fn)
+
+    # Para: Paraphrase detection
+    para_train_data = SentencePairDataset(para_train_data, args)
+    para_dev_data = SentencePairDataset(para_dev_data, args)
+    para_train_dataloader = DataLoader(para_train_data, shuffle=True, batch_size=args.batch_size,
+                                      collate_fn=para_train_data.collate_fn)
+    para_dev_dataloader = DataLoader(para_dev_data, shuffle=False, batch_size=args.batch_size,
+                                    collate_fn=para_dev_data.collate_fn)
+
+    # STS: Semantic textual similarity
+    sts_train_data = SentencePairDataset(sts_train_data, args)
+    sts_dev_data = SentencePairDataset(sts_dev_data, args)
+    sts_train_dataloader = DataLoader(sts_train_data, shuffle=True, batch_size=args.batch_size,
+                                        collate_fn=sts_train_data.collate_fn)
+    sts_dev_dataloader = DataLoader(sts_dev_data, shuffle=False, batch_size=args.batch_size,
+                                    collate_fn=sts_dev_data.collate_fn)
 
     # Init model
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
@@ -189,9 +205,35 @@ def train_multitask(args):
     # Run for the specified number of epochs
     for epoch in range(args.epochs):
         model.train()
-        train_loss = 0
+        train_loss_sst, train_loss_para, train_loss_sts = 0, 0, 0
         num_batches = 0
-        for batch in tqdm(sst_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
+
+        for i, batch in enumerate(tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
+            b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
+                                                              batch['attention_mask_1'],
+                                                              batch['token_ids_2'],
+                                                              batch['attention_mask_2'],
+                                                              batch['labels'])
+
+            b_ids_1 = b_ids_1.to(device)
+            b_mask_1 = b_mask_1.to(device)
+            b_ids_2 = b_ids_2.to(device)
+            b_mask_2 = b_mask_2.to(device)
+            b_labels = b_labels.to(device)
+
+            optimizer.zero_grad()
+            logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+            loss = F.binary_cross_entropy_with_logits(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+
+            loss.backward()
+            optimizer.step()
+
+            train_loss_para += loss.item()
+            num_batches += 1
+            print(f'batch {i}/{len(para_train_dataloader)} Para - loss: {loss.item()}')
+
+
+        for i, batch in enumerate(tqdm(sst_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
             b_ids, b_mask, b_labels = (batch['token_ids'],
                                        batch['attention_mask'], batch['labels'])
 
@@ -206,19 +248,27 @@ def train_multitask(args):
             loss.backward()
             optimizer.step()
 
-            train_loss += loss.item()
+            train_loss_sst += loss.item()
             num_batches += 1
+            print(f'batch {i}/{len(sst_train_dataloader)} SST - loss: {loss.item()}')
 
-        train_loss = train_loss / (num_batches)
+        train_loss_sst = train_loss_sst / (num_batches)
+        train_loss_para = train_loss_para / (num_batches)
+        train_loss_sts = train_loss_sts / (num_batches)
 
-        train_acc, train_f1, *_ = model_eval_sst(sst_train_dataloader, model, device)
-        dev_acc, dev_f1, *_ = model_eval_sst(sst_dev_dataloader, model, device)
+        (paraphrase_accuracy, para_y_pred, para_sent_ids,
+        sentiment_accuracy,sst_y_pred, sst_sent_ids,
+        sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(model, sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, device)
 
-        if dev_acc > best_dev_acc:
-            best_dev_acc = dev_acc
+        mean_dev_acc = (paraphrase_accuracy + sentiment_accuracy + sts_corr) / 3
+
+        if mean_dev_acc > best_dev_acc:
+            best_dev_acc = mean_dev_acc
             save_model(model, optimizer, args, config, args.filepath)
 
-        print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
+        print(f"Epoch {epoch}: train loss sst: {train_loss_sst:.3f}, train loss para: {train_loss_para:.3f}, train loss sts: {train_loss_sts:.3f}")
+        print(f"Epoch {epoch}: dev acc sst: {sentiment_accuracy:.3f}, dev acc para: {paraphrase_accuracy:.3f}, dev acc sts: {sts_corr:.3f}")
+        print("")
 
 
 
