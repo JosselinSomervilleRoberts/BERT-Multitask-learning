@@ -111,7 +111,9 @@ def model_eval_multitask(sentiment_dataloader,
             b_mask2 = b_mask2.to(device)
 
             logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+            # Extract the prediction as the index of the highest score.
             y_hat = logits.sigmoid().flatten().cpu().numpy()
+            y_hat = torch.argmax(y_hat, dim=1).flatten()
             b_labels = b_labels.flatten().cpu().numpy()
 
             sts_y_pred.extend(y_hat)
