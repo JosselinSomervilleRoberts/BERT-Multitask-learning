@@ -295,7 +295,7 @@ def train_multitask(args):
 
         (paraphrase_accuracy, para_y_pred, para_sent_ids,
         sentiment_accuracy,sst_y_pred, sst_sent_ids,
-        sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(model, sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, device)
+        sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
 
         mean_dev_acc = (paraphrase_accuracy + sentiment_accuracy + sts_corr) / 3
 
