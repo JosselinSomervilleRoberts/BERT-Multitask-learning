@@ -206,7 +206,7 @@ def train_multitask(args):
     for epoch in range(args.epochs):
         model.train()
         train_loss_sst, train_loss_para, train_loss_sts = 0, 0, 0
-        num_batches = 0
+        num_batches_sst, num_batches_para, num_batches_sts = 0, 0, 0
 
         for i, batch in enumerate(tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
             b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
@@ -223,13 +223,13 @@ def train_multitask(args):
 
             optimizer.zero_grad()
             logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-            loss = F.binary_cross_entropy_with_logits(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+            loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
             loss.backward()
             optimizer.step()
 
             train_loss_para += loss.item()
-            num_batches += 1
+            num_batches_para += 1
             print(f'batch {i}/{len(para_train_dataloader)} Para - loss: {loss.item()}')
 
 
@@ -249,12 +249,12 @@ def train_multitask(args):
             optimizer.step()
 
             train_loss_sst += loss.item()
-            num_batches += 1
+            num_batches_sst += 1
             print(f'batch {i}/{len(sst_train_dataloader)} SST - loss: {loss.item()}')
 
-        train_loss_sst = train_loss_sst / (num_batches)
-        train_loss_para = train_loss_para / (num_batches)
-        train_loss_sts = train_loss_sts / (num_batches)
+        train_loss_sst = train_loss_sst / (num_batches_sst)
+        train_loss_para = train_loss_para / (num_batches_para)
+        # train_loss_sts = train_loss_sts / (num_batches_sts)
 
         (paraphrase_accuracy, para_y_pred, para_sent_ids,
         sentiment_accuracy,sst_y_pred, sst_sent_ids,
