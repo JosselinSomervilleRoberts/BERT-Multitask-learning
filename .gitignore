@@ -1,5 +1,6 @@
 # Project specific
 *.pt
+config.ini
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
