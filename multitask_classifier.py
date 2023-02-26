@@ -208,6 +208,30 @@ def train_multitask(args):
         train_loss_sst, train_loss_para, train_loss_sts = 0, 0, 0
         num_batches_sst, num_batches_para, num_batches_sts = 0, 0, 0
 
+        # STS: Semantic textual similarity
+        for i, batch in enumerate(tqdm(sts_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
+            b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
+                                                              batch['attention_mask_1'],
+                                                              batch['token_ids_2'],
+                                                              batch['attention_mask_2'],
+                                                              batch['labels'])
+
+            b_ids_1 = b_ids_1.to(device)
+            b_mask_1 = b_mask_1.to(device)
+            b_ids_2 = b_ids_2.to(device)
+            b_mask_2 = b_mask_2.to(device)
+            b_labels = b_labels.to(device)
+
+            optimizer.zero_grad()
+            preds = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+            loss = F.mse_loss(preds, b_labels)
+            loss.backward()
+            optimizer.step()
+
+            train_loss_sts += loss.item()
+            num_batches_sts += 1
+            print(f"STS: train loss: {train_loss_sts / num_batches_sts}")
+
         for i, batch in enumerate(tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
             b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
                                                               batch['attention_mask_1'],
