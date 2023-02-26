@@ -227,6 +227,7 @@ def load_model(model, filepath):
         saved = torch.load(filepath)
         config = saved['model_config']
         model.load_state_dict(saved['model'])
+        print(f"Loaded model from {filepath}")
         return config
 
 def test_model(args):
