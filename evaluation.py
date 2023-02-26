@@ -26,7 +26,7 @@ from datasets import load_multitask_data, load_multitask_test_data, \
     SentencePairDataset, SentencePairTestDataset
 
 
-TQDM_DISABLE = True
+TQDM_DISABLE = False
 
 # Evaluate a multitask model for accuracy.on SST only.
 def model_eval_sst(dataloader, model, device):
@@ -112,8 +112,8 @@ def model_eval_multitask(sentiment_dataloader,
 
             logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
             # Extract the prediction as the index of the highest score.
-            y_hat = logits.sigmoid().flatten().cpu().numpy()
-            y_hat = torch.argmax(y_hat, dim=1).flatten()
+            y_hat = logits.sigmoid().flatten().cpu()
+            y_hat = torch.argmax(y_hat, dim=1).flatten().numpy()
             b_labels = b_labels.flatten().cpu().numpy()
 
             sts_y_pred.extend(y_hat)
