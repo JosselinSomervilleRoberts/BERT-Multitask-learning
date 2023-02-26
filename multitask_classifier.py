@@ -31,6 +31,7 @@ def seed_everything(seed=11711):
 
 BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
+N_STS_CLASSES = 6
 
 
 class MultitaskBERT(nn.Module):
@@ -64,7 +65,7 @@ class MultitaskBERT(nn.Module):
         self.linear_paraphrase = nn.Linear(2 * BERT_HIDDEN_SIZE, 1)
 
         # Step 4: Add a linear layer for semantic textual similarity
-        self.linear_similarity = nn.Linear(2 * BERT_HIDDEN_SIZE, 1)
+        self.linear_similarity = nn.Linear(2 * BERT_HIDDEN_SIZE, N_STS_CLASSES)
 
 
     def forward(self, input_ids, attention_mask):
@@ -223,14 +224,15 @@ def train_multitask(args):
             b_labels = b_labels.to(device)
 
             optimizer.zero_grad()
-            preds = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-            loss = F.mse_loss(preds, b_labels)
+            logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+            loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+            
             loss.backward()
             optimizer.step()
 
             train_loss_sts += loss.item()
             num_batches_sts += 1
-            print(f"STS: train loss: {train_loss_sts / num_batches_sts}")
+            print(f'batch {i}/{len(sts_train_dataloader)} STS - loss: {loss.item()}')
 
         for i, batch in enumerate(tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
             b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
@@ -285,7 +287,7 @@ def train_multitask(args):
 
         train_loss_sst = train_loss_sst / (num_batches_sst)
         train_loss_para = train_loss_para / (num_batches_para)
-        # train_loss_sts = train_loss_sts / (num_batches_sts)
+        train_loss_sts = train_loss_sts / (num_batches_sts)
 
         (paraphrase_accuracy, para_y_pred, para_sent_ids,
         sentiment_accuracy,sst_y_pred, sst_sent_ids,
