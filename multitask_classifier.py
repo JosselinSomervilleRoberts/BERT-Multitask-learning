@@ -16,7 +16,7 @@ from datasets import SentenceClassificationDataset, SentencePairDataset, \
 from evaluation import model_eval_multitask, test_model_multitask
 
 
-TQDM_DISABLE=True
+TQDM_DISABLE = False
 
 # fix the random seed
 def seed_everything(seed=11711):
@@ -233,7 +233,7 @@ def train_multitask(args):
 
             train_loss_sts += loss.item()
             num_batches_sts += 1
-            print(f'batch {i+1}/{len(sts_train_dataloader)} STS - loss: {loss.item()}')
+            if TQDM_DISABLE: print(f'batch {i+1}/{len(sts_train_dataloader)} STS - loss: {loss.item()}')
 
         for i, batch in enumerate(tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
             b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
@@ -250,8 +250,8 @@ def train_multitask(args):
 
             # optimizer.zero_grad()
             preds = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-            print(b_ids_1.shape, b_mask_1.shape, b_ids_2.shape, b_mask_2.shape, b_labels.shape)
-            loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum') / args.batch_size
+            #print(b_ids_1.shape, b_mask_1.shape, b_ids_2.shape, b_mask_2.shape, b_labels.shape)
+            loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum')  * gradient_accumulation_steps / args.batch_size
 
             loss.backward()
 
@@ -261,7 +261,7 @@ def train_multitask(args):
 
             train_loss_para += loss.item()
             num_batches_para += 1
-            print(f'batch {i+1}/{len(para_train_dataloader)} Para - loss: {loss.item()}')
+            if TQDM_DISABLE: print(f'batch {i+1}/{len(para_train_dataloader)} Para - loss: {loss.item()}')
             #print("BEFORE: Memory allocated:", torch.cuda.memory_allocated(device="cuda:0") / 1024 ** 3, "GB")
             #print(torch.cuda.memory_summary())
             torch.cuda.empty_cache()
@@ -287,7 +287,7 @@ def train_multitask(args):
 
             train_loss_sst += loss.item()
             num_batches_sst += 1
-            print(f'batch {i+1}/{len(sst_train_dataloader)} SST - loss: {loss.item()}')
+            if TQDM_DISABLE: print(f'batch {i+1}/{len(sst_train_dataloader)} SST - loss: {loss.item()}')
 
         train_loss_sst = train_loss_sst / (num_batches_sst)
         train_loss_para = train_loss_para / (num_batches_para)
