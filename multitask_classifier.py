@@ -223,6 +223,7 @@ def train_multitask(args):
 
             optimizer.zero_grad()
             preds = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+            print(b_ids_1.shape, b_mask_1.shape, b_ids_2.shape, b_mask_2.shape, b_labels.shape)
             loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum') / args.batch_size
 
             loss.backward()
@@ -230,13 +231,13 @@ def train_multitask(args):
 
             train_loss_para += loss.item()
             num_batches_para += 1
-            print(f'batch {i}/{len(para_train_dataloader)} Para - loss: {loss.item()}')
-            print("BEFORE: Memory allocated:", torch.cuda.memory_allocated(device="cuda:0") / 1024 ** 3, "GB")
-            print(torch.cuda.memory_summary())
+            #print(f'batch {i}/{len(para_train_dataloader)} Para - loss: {loss.item()}')
+            #print("BEFORE: Memory allocated:", torch.cuda.memory_allocated(device="cuda:0") / 1024 ** 3, "GB")
+            #print(torch.cuda.memory_summary())
             torch.cuda.empty_cache()
-            print("\n\nAFTER: Memory allocated:", torch.cuda.memory_allocated(device="cuda:0") / 1024 ** 3, "GB")
-            print(torch.cuda.memory_summary())
-            print("\n\n\n")
+            #print("\n\nAFTER: Memory allocated:", torch.cuda.memory_allocated(device="cuda:0") / 1024 ** 3, "GB")
+            #print(torch.cuda.memory_summary())
+            #print("\n\n\n")
 
 
         for i, batch in enumerate(tqdm(sst_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
