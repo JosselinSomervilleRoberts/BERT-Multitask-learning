@@ -172,9 +172,9 @@ def train_multitask(args):
     gradient_accumulation_steps = 8
     para_train_data = SentencePairDataset(para_train_data, args)
     para_dev_data = SentencePairDataset(para_dev_data, args)
-    para_train_dataloader = DataLoader(para_train_data, shuffle=True, batch_size=args.batch_size / gradient_accumulation_steps,
+    para_train_dataloader = DataLoader(para_train_data, shuffle=True, batch_size=int(args.batch_size / gradient_accumulation_steps),
                                       collate_fn=para_train_data.collate_fn)
-    para_dev_dataloader = DataLoader(para_dev_data, shuffle=False, batch_size=args.batch_size / gradient_accumulation_steps,
+    para_dev_dataloader = DataLoader(para_dev_data, shuffle=False, batch_size=int(args.batch_size / gradient_accumulation_steps),
                                     collate_fn=para_dev_data.collate_fn)
 
     # STS: Semantic textual similarity
