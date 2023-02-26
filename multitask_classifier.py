@@ -231,6 +231,7 @@ def train_multitask(args):
             train_loss_para += loss.item()
             num_batches_para += 1
             print(f'batch {i}/{len(para_train_dataloader)} Para - loss: {loss.item()}')
+            torch.cuda.empty_cache()
 
 
         for i, batch in enumerate(tqdm(sst_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
