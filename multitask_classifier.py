@@ -45,8 +45,7 @@ class MultitaskBERT(nn.Module):
         super(MultitaskBERT, self).__init__()
         # You will want to add layers here to perform the downstream tasks.
         # Pretrain mode does not require updating bert paramters.
-        print('Loading BERT model from', args.pretrained_model_name)
-        self.bert = BertModel.from_pretrained(args.pretrained_model_name)
+        self.bert = BertModel.from_pretrained("bert-base-uncased")
         for param in self.bert.parameters():
             if config.option == 'pretrain':
                 param.requires_grad = False
@@ -179,6 +178,8 @@ def train_multitask(args):
     config = SimpleNamespace(**config)
 
     model = MultitaskBERT(config)
+    if args.pretrained_model_name != "none":
+        config = load_model(model, args.pretrained_model_name)
     model = model.to(device)
 
     lr = args.lr
@@ -221,6 +222,13 @@ def train_multitask(args):
 
 
 
+def load_model(model, filepath):
+    with torch.no_grad():
+        saved = torch.load(filepath)
+        config = saved['model_config']
+        model.load_state_dict(saved['model'])
+        return config
+
 def test_model(args):
     with torch.no_grad():
         device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
@@ -254,7 +262,7 @@ def get_args():
     parser.add_argument("--option", type=str,
                         help='pretrain: the BERT parameters are frozen; finetune: BERT parameters are updated',
                         choices=('pretrain', 'finetune'), default="pretrain")
-    parser.add_argument("--pretrained_model_name", type=str, default="bert-base-uncased")
+    parser.add_argument("--pretrained_model_name", type=str, default="none")
     parser.add_argument("--use_gpu", action='store_true')
 
     parser.add_argument("--sst_dev_out", type=str, default="predictions/sst-dev-output.csv")
