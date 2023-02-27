@@ -26,7 +26,7 @@ from datasets import load_multitask_data, load_multitask_test_data, \
     SentencePairDataset, SentencePairTestDataset
 
 
-TQDM_DISABLE = True
+TQDM_DISABLE = False
 
 # Evaluate a multitask model for accuracy.on SST only.
 def model_eval_sst(dataloader, model, device):
@@ -114,7 +114,7 @@ def model_eval_multitask(sentiment_dataloader,
             y_hat = logits.flatten().cpu().numpy()
             b_labels = b_labels.flatten().cpu().numpy()
 
-            sts_y_pred.extend(y_hat)
+            sts_y_pred.extend(preds)
             sts_y_true.extend(b_labels)
             sts_sent_ids.extend(b_sent_ids)
         pearson_mat = np.corrcoef(sts_y_pred,sts_y_true)
@@ -199,7 +199,7 @@ def model_eval_test_multitask(sentiment_dataloader,
             b_mask2 = b_mask2.to(device)
 
             logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-            y_hat = logits.flatten().cpu().numpy()
+            y_hat = logits.sigmoid().flatten().cpu().numpy()
 
             sts_y_pred.extend(y_hat)
             sts_sent_ids.extend(b_sent_ids)
