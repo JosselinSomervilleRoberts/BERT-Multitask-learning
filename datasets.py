@@ -128,7 +128,7 @@ class SentencePairDataset(Dataset):
         attention_mask2 = torch.LongTensor(encoding2['attention_mask'])
         token_type_ids2 = torch.LongTensor(encoding2['token_type_ids'])
         if self.isRegression:
-            labels = torch.DoubleTensor(labels)
+            labels = torch.FloatTensor(labels)
         else:
             labels = torch.LongTensor(labels)
             

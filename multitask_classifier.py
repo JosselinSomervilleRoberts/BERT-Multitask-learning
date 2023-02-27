@@ -68,7 +68,8 @@ class MultitaskBERT(nn.Module):
         self.linear_paraphrase = nn.Linear(2 * BERT_HIDDEN_SIZE, 1)
 
         # Step 4: Add a linear layer for semantic textual similarity
-        self.linear_similarity = nn.Linear(2 * BERT_HIDDEN_SIZE, N_STS_CLASSES)
+        # This is a regression task, so the output should be a single number
+        self.linear_similarity = nn.Linear(2 * BERT_HIDDEN_SIZE, 1)
 
 
     def forward(self, input_ids, attention_mask):
@@ -194,8 +195,8 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'], batch['attention_mask_1'], batch['token_ids_2'], batch['attention_mask_2'], batch['labels'])
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
 
-        logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-        loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+        preds = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item() / args.gradient_accumulations_sts
         objects_group.loss_sum += loss_value
 
@@ -270,7 +271,7 @@ def train_multitask(args):
                                     collate_fn=para_dev_data.collate_fn)
 
     # STS: Semantic textual similarity
-    sts_train_data = SentencePairDataset(sts_train_data, args)
+    sts_train_data = SentencePairDataset(sts_train_data, args, isRegression=True)
     sts_dev_data = SentencePairDataset(sts_dev_data, args)
     sts_train_dataloader = DataLoader(sts_train_data, shuffle=True, batch_size=args.batch_size_sts,
                                         collate_fn=sts_train_data.collate_fn)
