@@ -13,10 +13,10 @@ from tqdm import tqdm
 from datasets import SentenceClassificationDataset, SentencePairDataset, \
     load_multitask_data, load_multitask_test_data
 
-from evaluation import model_eval_sst, test_model_multitask
+from evaluation import model_eval_multitask, test_model_multitask
 
 
-TQDM_DISABLE=True
+TQDM_DISABLE = False
 
 # fix the random seed
 def seed_everything(seed=11711):
@@ -31,6 +31,7 @@ def seed_everything(seed=11711):
 
 BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
+N_STS_CLASSES = 6
 
 
 class MultitaskBERT(nn.Module):
@@ -45,8 +46,7 @@ class MultitaskBERT(nn.Module):
         super(MultitaskBERT, self).__init__()
         # You will want to add layers here to perform the downstream tasks.
         # Pretrain mode does not require updating bert paramters.
-        print('Loading BERT model from', args.pretrained_model_name)
-        self.bert = BertModel.from_pretrained(args.pretrained_model_name)
+        self.bert = BertModel.from_pretrained("bert-base-uncased")
         for param in self.bert.parameters():
             if config.option == 'pretrain':
                 param.requires_grad = False
@@ -65,7 +65,7 @@ class MultitaskBERT(nn.Module):
         self.linear_paraphrase = nn.Linear(2 * BERT_HIDDEN_SIZE, 1)
 
         # Step 4: Add a linear layer for semantic textual similarity
-        self.linear_similarity = nn.Linear(2 * BERT_HIDDEN_SIZE, 1)
+        self.linear_similarity = nn.Linear(2 * BERT_HIDDEN_SIZE, N_STS_CLASSES)
 
 
     def forward(self, input_ids, attention_mask):
@@ -160,13 +160,30 @@ def train_multitask(args):
     sst_train_data, num_labels,para_train_data, sts_train_data = load_multitask_data(args.sst_train,args.para_train,args.sts_train, split ='train')
     sst_dev_data, num_labels,para_dev_data, sts_dev_data = load_multitask_data(args.sst_dev,args.para_dev,args.sts_dev, split ='train')
 
+    # SST: Sentiment classification
     sst_train_data = SentenceClassificationDataset(sst_train_data, args)
     sst_dev_data = SentenceClassificationDataset(sst_dev_data, args)
-
     sst_train_dataloader = DataLoader(sst_train_data, shuffle=True, batch_size=args.batch_size,
                                       collate_fn=sst_train_data.collate_fn)
     sst_dev_dataloader = DataLoader(sst_dev_data, shuffle=False, batch_size=args.batch_size,
                                     collate_fn=sst_dev_data.collate_fn)
+
+    # Para: Paraphrase detection
+    gradient_accumulation_steps = 8
+    para_train_data = SentencePairDataset(para_train_data, args)
+    para_dev_data = SentencePairDataset(para_dev_data, args)
+    para_train_dataloader = DataLoader(para_train_data, shuffle=True, batch_size=int(args.batch_size / gradient_accumulation_steps),
+                                      collate_fn=para_train_data.collate_fn)
+    para_dev_dataloader = DataLoader(para_dev_data, shuffle=False, batch_size=int(args.batch_size / gradient_accumulation_steps),
+                                    collate_fn=para_dev_data.collate_fn)
+
+    # STS: Semantic textual similarity
+    sts_train_data = SentencePairDataset(sts_train_data, args)
+    sts_dev_data = SentencePairDataset(sts_dev_data, args)
+    sts_train_dataloader = DataLoader(sts_train_data, shuffle=True, batch_size=args.batch_size,
+                                        collate_fn=sts_train_data.collate_fn)
+    sts_dev_dataloader = DataLoader(sts_dev_data, shuffle=False, batch_size=args.batch_size,
+                                    collate_fn=sts_dev_data.collate_fn)
 
     # Init model
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
@@ -179,6 +196,8 @@ def train_multitask(args):
     config = SimpleNamespace(**config)
 
     model = MultitaskBERT(config)
+    if args.pretrained_model_name != "none":
+        config = load_model(model, args.pretrained_model_name)
     model = model.to(device)
 
     lr = args.lr
@@ -188,9 +207,70 @@ def train_multitask(args):
     # Run for the specified number of epochs
     for epoch in range(args.epochs):
         model.train()
-        train_loss = 0
-        num_batches = 0
-        for batch in tqdm(sst_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
+        train_loss_sst, train_loss_para, train_loss_sts = 0, 0, 0
+        num_batches_sst, num_batches_para, num_batches_sts = 0, 0, 0
+
+        # STS: Semantic textual similarity
+        for i, batch in enumerate(tqdm(sts_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
+            b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
+                                                              batch['attention_mask_1'],
+                                                              batch['token_ids_2'],
+                                                              batch['attention_mask_2'],
+                                                              batch['labels'])
+
+            b_ids_1 = b_ids_1.to(device)
+            b_mask_1 = b_mask_1.to(device)
+            b_ids_2 = b_ids_2.to(device)
+            b_mask_2 = b_mask_2.to(device)
+            b_labels = b_labels.to(device)
+
+            optimizer.zero_grad()
+            logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+            loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+            
+            loss.backward()
+            optimizer.step()
+
+            train_loss_sts += loss.item()
+            num_batches_sts += 1
+            if TQDM_DISABLE: print(f'batch {i+1}/{len(sts_train_dataloader)} STS - loss: {loss.item()}')
+
+        for i, batch in enumerate(tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
+            b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
+                                                              batch['attention_mask_1'],
+                                                              batch['token_ids_2'],
+                                                              batch['attention_mask_2'],
+                                                              batch['labels'])
+
+            b_ids_1 = b_ids_1.to(device)
+            b_mask_1 = b_mask_1.to(device)
+            b_ids_2 = b_ids_2.to(device)
+            b_mask_2 = b_mask_2.to(device)
+            b_labels = b_labels.to(device)
+
+            # optimizer.zero_grad()
+            preds = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+            #print(b_ids_1.shape, b_mask_1.shape, b_ids_2.shape, b_mask_2.shape, b_labels.shape)
+            loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum')  * gradient_accumulation_steps / args.batch_size
+
+            loss.backward()
+
+            if (i + 1) % gradient_accumulation_steps == 0:
+                optimizer.step()
+                optimizer.zero_grad()
+
+            train_loss_para += loss.item()
+            num_batches_para += 1
+            if TQDM_DISABLE: print(f'batch {i+1}/{len(para_train_dataloader)} Para - loss: {loss.item()}')
+            #print("BEFORE: Memory allocated:", torch.cuda.memory_allocated(device="cuda:0") / 1024 ** 3, "GB")
+            #print(torch.cuda.memory_summary())
+            torch.cuda.empty_cache()
+            #print("\n\nAFTER: Memory allocated:", torch.cuda.memory_allocated(device="cuda:0") / 1024 ** 3, "GB")
+            #print(torch.cuda.memory_summary())
+            #print("\n\n\n")
+
+
+        for i, batch in enumerate(tqdm(sst_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
             b_ids, b_mask, b_labels = (batch['token_ids'],
                                        batch['attention_mask'], batch['labels'])
 
@@ -205,21 +285,37 @@ def train_multitask(args):
             loss.backward()
             optimizer.step()
 
-            train_loss += loss.item()
-            num_batches += 1
+            train_loss_sst += loss.item()
+            num_batches_sst += 1
+            if TQDM_DISABLE: print(f'batch {i+1}/{len(sst_train_dataloader)} SST - loss: {loss.item()}')
 
-        train_loss = train_loss / (num_batches)
+        train_loss_sst = train_loss_sst / (num_batches_sst)
+        train_loss_para = train_loss_para / (num_batches_para)
+        train_loss_sts = train_loss_sts / (num_batches_sts)
 
-        train_acc, train_f1, *_ = model_eval_sst(sst_train_dataloader, model, device)
-        dev_acc, dev_f1, *_ = model_eval_sst(sst_dev_dataloader, model, device)
+        (paraphrase_accuracy, para_y_pred, para_sent_ids,
+        sentiment_accuracy,sst_y_pred, sst_sent_ids,
+        sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
 
-        if dev_acc > best_dev_acc:
-            best_dev_acc = dev_acc
+        mean_dev_acc = (paraphrase_accuracy + sentiment_accuracy + sts_corr) / 3
+
+        if mean_dev_acc > best_dev_acc:
+            best_dev_acc = mean_dev_acc
             save_model(model, optimizer, args, config, args.filepath)
 
-        print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
+        print(f"Epoch {epoch}: train loss sst: {train_loss_sst:.3f}, train loss para: {train_loss_para:.3f}, train loss sts: {train_loss_sts:.3f}")
+        print(f"Epoch {epoch}: dev acc sst: {sentiment_accuracy:.3f}, dev acc para: {paraphrase_accuracy:.3f}, dev acc sts: {sts_corr:.3f}")
+        print("")
 
 
+
+def load_model(model, filepath):
+    with torch.no_grad():
+        saved = torch.load(filepath)
+        config = saved['model_config']
+        model.load_state_dict(saved['model'])
+        print(f"Loaded model from {filepath}")
+        return config
 
 def test_model(args):
     with torch.no_grad():
@@ -254,7 +350,7 @@ def get_args():
     parser.add_argument("--option", type=str,
                         help='pretrain: the BERT parameters are frozen; finetune: BERT parameters are updated',
                         choices=('pretrain', 'finetune'), default="pretrain")
-    parser.add_argument("--pretrained_model_name", type=str, default="bert-base-uncased")
+    parser.add_argument("--pretrained_model_name", type=str, default="none")
     parser.add_argument("--use_gpu", action='store_true')
 
     parser.add_argument("--sst_dev_out", type=str, default="predictions/sst-dev-output.csv")
