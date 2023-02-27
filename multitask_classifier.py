@@ -169,7 +169,7 @@ def train_multitask(args):
                                     collate_fn=sst_dev_data.collate_fn)
 
     # Para: Paraphrase detection
-    gradient_accumulation_steps = 8
+    gradient_accumulation_steps = 1
     para_train_data = SentencePairDataset(para_train_data, args)
     para_dev_data = SentencePairDataset(para_dev_data, args)
     para_train_dataloader = DataLoader(para_train_data, shuffle=True, batch_size=int(args.batch_size / gradient_accumulation_steps),
@@ -211,7 +211,7 @@ def train_multitask(args):
         num_batches_sst, num_batches_para, num_batches_sts = 0, 0, 0
 
         # STS: Semantic textual similarity
-        for i, batch in enumerate(tqdm(sts_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
+        for batch in tqdm(sts_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
             b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
                                                               batch['attention_mask_1'],
                                                               batch['token_ids_2'],
@@ -233,9 +233,9 @@ def train_multitask(args):
 
             train_loss_sts += loss.item()
             num_batches_sts += 1
-            if TQDM_DISABLE: print(f'batch {i+1}/{len(sts_train_dataloader)} STS - loss: {loss.item()}')
+            if TQDM_DISABLE: print(f'batch {num_batches_sts}/{len(sts_train_dataloader)} STS - loss: {loss.item()}')
 
-        for i, batch in enumerate(tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
+        for batch in tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
             b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
                                                               batch['attention_mask_1'],
                                                               batch['token_ids_2'],
@@ -261,7 +261,7 @@ def train_multitask(args):
 
             train_loss_para += loss.item()
             num_batches_para += 1
-            if TQDM_DISABLE: print(f'batch {i+1}/{len(para_train_dataloader)} Para - loss: {loss.item()}')
+            if TQDM_DISABLE: print(f'batch {num_batches_para}/{len(para_train_dataloader)} Para - loss: {loss.item()}')
             #print("BEFORE: Memory allocated:", torch.cuda.memory_allocated(device="cuda:0") / 1024 ** 3, "GB")
             #print(torch.cuda.memory_summary())
             torch.cuda.empty_cache()
@@ -270,7 +270,7 @@ def train_multitask(args):
             #print("\n\n\n")
 
 
-        for i, batch in enumerate(tqdm(sst_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
+        for batch in tqdm(sst_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
             b_ids, b_mask, b_labels = (batch['token_ids'],
                                        batch['attention_mask'], batch['labels'])
 
@@ -287,7 +287,7 @@ def train_multitask(args):
 
             train_loss_sst += loss.item()
             num_batches_sst += 1
-            if TQDM_DISABLE: print(f'batch {i+1}/{len(sst_train_dataloader)} SST - loss: {loss.item()}')
+            if TQDM_DISABLE: print(f'batch {num_batches_sst}/{len(sst_train_dataloader)} SST - loss: {loss.item()}')
 
         train_loss_sst = train_loss_sst / (num_batches_sst)
         train_loss_para = train_loss_para / (num_batches_para)
