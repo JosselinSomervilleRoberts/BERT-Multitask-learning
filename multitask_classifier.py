@@ -324,23 +324,23 @@ def train_multitask(args):
         step_optimizer(objects_group, args)
 
         # Para: Paraphrase detection
-        # model.zero_grad()
-        # for batch in tqdm(para_train_dataloader, desc=f'Para- train-{epoch}', disable=TQDM_DISABLE):
-        #     train_loss_para += process_paraphrase_batch(batch, objects_group, args)
-        #     num_batches_para += 1
-        #     finish_training_batch(objects_group, args, step=num_batches_para, gradient_accumulations=args.gradient_accumulations_para, total_nb_batches=len(para_train_dataloader))
-        # step_optimizer(objects_group, args)
+        model.zero_grad()
+        for batch in tqdm(para_train_dataloader, desc=f'Para- train-{epoch}', disable=TQDM_DISABLE):
+            train_loss_para += process_paraphrase_batch(batch, objects_group, args)
+            num_batches_para += 1
+            finish_training_batch(objects_group, args, step=num_batches_para, gradient_accumulations=args.gradient_accumulations_para, total_nb_batches=len(para_train_dataloader))
+        step_optimizer(objects_group, args)
 
-        # # SST: Sentiment classification
-        # for batch in tqdm(sst_train_dataloader, desc=f'SST - train-{epoch}', disable=TQDM_DISABLE):
-        #     train_loss_sst += process_sentiment_batch(batch, objects_group, args)
-        #     num_batches_sst += 1
-        #     finish_training_batch(objects_group, args, step=num_batches_sst, gradient_accumulations=args.gradient_accumulations_sst, total_nb_batches=len(sst_train_dataloader))
-        # step_optimizer(objects_group, args)
+        # SST: Sentiment classification
+        for batch in tqdm(sst_train_dataloader, desc=f'SST - train-{epoch}', disable=TQDM_DISABLE):
+            train_loss_sst += process_sentiment_batch(batch, objects_group, args)
+            num_batches_sst += 1
+            finish_training_batch(objects_group, args, step=num_batches_sst, gradient_accumulations=args.gradient_accumulations_sst, total_nb_batches=len(sst_train_dataloader))
+        step_optimizer(objects_group, args)
 
         # Train loss
-        # train_loss_sst = train_loss_sst / (num_batches_sst)
-        # train_loss_para = train_loss_para / (num_batches_para)
+        train_loss_sst = train_loss_sst / (num_batches_sst)
+        train_loss_para = train_loss_para / (num_batches_para)
         train_loss_sts = train_loss_sts / (num_batches_sts)
 
         # Eval on dev
