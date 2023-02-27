@@ -151,10 +151,10 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
     model, scaler = objects_group.model, objects_group.scaler
 
     with autocast() if args.use_amp else nullcontext():
-        b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'], batch['attention_mask_1'], batch['token_ids_2'], batch['attention_mask_2'], batch['labels'])
-        b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
+        b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
+        b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
 
-        logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        logits = model.predict_sentiment(b_ids, b_mask)
         loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size_sst
         loss_value = loss.item() / args.gradient_accumulations_sst
         objects_group.loss_sum += loss_value
@@ -316,15 +316,15 @@ def train_multitask(args):
         step_optimizer(objects_group, args)
 
         # Para: Paraphrase detection
-        model.zero_grad()
-        for batch in tqdm(para_train_dataloader, desc=f'Para- train-{epoch}', disable=TQDM_DISABLE):
-            train_loss_para += process_paraphrase_batch(batch, objects_group, args)
-            num_batches_para += 1
-            finish_training_batch(objects_group, args, step=num_batches_para, gradient_accumulations=args.gradient_accumulations_para, total_nb_batches=len(para_train_dataloader))
-        step_optimizer(objects_group, args)
+        # model.zero_grad()
+        # for batch in tqdm(para_train_dataloader, desc=f'Para- train-{epoch}', disable=TQDM_DISABLE):
+        #     train_loss_para += process_paraphrase_batch(batch, objects_group, args)
+        #     num_batches_para += 1
+        #     finish_training_batch(objects_group, args, step=num_batches_para, gradient_accumulations=args.gradient_accumulations_para, total_nb_batches=len(para_train_dataloader))
+        # step_optimizer(objects_group, args)
 
         # SST: Sentiment classification
-        for batch in tqdm(sst_train_dataloader, desc=f'SST- train-{epoch}', disable=TQDM_DISABLE):
+        for batch in tqdm(sst_train_dataloader, desc=f'SST - train-{epoch}', disable=TQDM_DISABLE):
             train_loss_sst += process_similarity_batch(batch, objects_group, args)
             num_batches_sst += 1
             finish_training_batch(objects_group, args, step=num_batches_sst, gradient_accumulations=args.gradient_accumulations_sst, total_nb_batches=len(sst_train_dataloader))
