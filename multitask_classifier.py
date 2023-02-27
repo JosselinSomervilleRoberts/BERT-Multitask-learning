@@ -65,10 +65,13 @@ class MultitaskBERT(nn.Module):
         self.linear_sentiment = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)
 
         # Step 3: Add a linear layer for paraphrase detection
+        self.dropout_paraphrase = nn.Dropout(config.hidden_dropout_prob)
         self.linear_paraphrase = nn.Linear(2 * BERT_HIDDEN_SIZE, 1)
 
         # Step 4: Add a linear layer for semantic textual similarity
-        self.linear_similarity = nn.Linear(2 * BERT_HIDDEN_SIZE, N_STS_CLASSES)
+        # This is a regression task, so the output should be a single number
+        self.dropout_similarity = nn.Dropout(config.hidden_dropout_prob)
+        self.linear_similarity = nn.Linear(2 * BERT_HIDDEN_SIZE, 1)
 
 
     def forward(self, input_ids, attention_mask):
@@ -115,6 +118,7 @@ class MultitaskBERT(nn.Module):
 
         # Step 2: Get the logits for paraphrase detection
         cls_embeddings = torch.cat((cls_embeddings_1, cls_embeddings_2), dim=1)
+        cls_embeddings = self.dropout_paraphrase(cls_embeddings)
         logits = self.linear_paraphrase(cls_embeddings)
 
         return logits
@@ -133,9 +137,13 @@ class MultitaskBERT(nn.Module):
 
         # Step 2: Get the logits for semantic textual similarity
         cls_embeddings = torch.cat((cls_embeddings_1, cls_embeddings_2), dim=1)
-        logits = self.linear_similarity(cls_embeddings)
+        cls_embeddings = self.dropout_similarity(cls_embeddings)
+        preds = self.linear_similarity(cls_embeddings)
 
-        return logits
+        # Step 3: Scale preds to be in the range of [0, 5]
+        preds = torch.sigmoid(preds) * 5
+
+        return preds
 
 
 class ObjectsGroup:
@@ -194,8 +202,8 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'], batch['attention_mask_1'], batch['token_ids_2'], batch['attention_mask_2'], batch['labels'])
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
 
-        logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-        loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+        preds = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item() / args.gradient_accumulations_sts
         objects_group.loss_sum += loss_value
 
@@ -270,7 +278,7 @@ def train_multitask(args):
                                     collate_fn=para_dev_data.collate_fn)
 
     # STS: Semantic textual similarity
-    sts_train_data = SentencePairDataset(sts_train_data, args)
+    sts_train_data = SentencePairDataset(sts_train_data, args, isRegression=True)
     sts_dev_data = SentencePairDataset(sts_dev_data, args)
     sts_train_dataloader = DataLoader(sts_train_data, shuffle=True, batch_size=args.batch_size_sts,
                                         collate_fn=sts_train_data.collate_fn)
@@ -316,23 +324,23 @@ def train_multitask(args):
         step_optimizer(objects_group, args)
 
         # Para: Paraphrase detection
-        model.zero_grad()
-        for batch in tqdm(para_train_dataloader, desc=f'Para- train-{epoch}', disable=TQDM_DISABLE):
-            train_loss_para += process_paraphrase_batch(batch, objects_group, args)
-            num_batches_para += 1
-            finish_training_batch(objects_group, args, step=num_batches_para, gradient_accumulations=args.gradient_accumulations_para, total_nb_batches=len(para_train_dataloader))
-        step_optimizer(objects_group, args)
+        # model.zero_grad()
+        # for batch in tqdm(para_train_dataloader, desc=f'Para- train-{epoch}', disable=TQDM_DISABLE):
+        #     train_loss_para += process_paraphrase_batch(batch, objects_group, args)
+        #     num_batches_para += 1
+        #     finish_training_batch(objects_group, args, step=num_batches_para, gradient_accumulations=args.gradient_accumulations_para, total_nb_batches=len(para_train_dataloader))
+        # step_optimizer(objects_group, args)
 
-        # SST: Sentiment classification
-        for batch in tqdm(sst_train_dataloader, desc=f'SST - train-{epoch}', disable=TQDM_DISABLE):
-            train_loss_sst += process_sentiment_batch(batch, objects_group, args)
-            num_batches_sst += 1
-            finish_training_batch(objects_group, args, step=num_batches_sst, gradient_accumulations=args.gradient_accumulations_sst, total_nb_batches=len(sst_train_dataloader))
-        step_optimizer(objects_group, args)
+        # # SST: Sentiment classification
+        # for batch in tqdm(sst_train_dataloader, desc=f'SST - train-{epoch}', disable=TQDM_DISABLE):
+        #     train_loss_sst += process_sentiment_batch(batch, objects_group, args)
+        #     num_batches_sst += 1
+        #     finish_training_batch(objects_group, args, step=num_batches_sst, gradient_accumulations=args.gradient_accumulations_sst, total_nb_batches=len(sst_train_dataloader))
+        # step_optimizer(objects_group, args)
 
         # Train loss
-        train_loss_sst = train_loss_sst / (num_batches_sst)
-        train_loss_para = train_loss_para / (num_batches_para)
+        # train_loss_sst = train_loss_sst / (num_batches_sst)
+        # train_loss_para = train_loss_para / (num_batches_para)
         train_loss_sts = train_loss_sts / (num_batches_sts)
 
         # Eval on dev
