@@ -254,10 +254,6 @@ def train_multitask(args):
     sst_dev_data, num_labels,para_dev_data, sts_dev_data = load_multitask_data(args.sst_dev,args.para_dev,args.sts_dev, split ='train')
 
     # SST: Sentiment classification
-    # Makes sure that the SST batch size is at most 256, otherwise, sets it to batch_size_sst
-    # so that batch_size_sst * gradient_accumulations_sst = batch_size and gradient_accumulations_sst is an integer.
-    args.gradient_accumulations_sst = int(np.ceil(args.batch_size / args.max_batch_size_sst))
-    args.batch_size_sst = args.batch_size // args.gradient_accumulations_sst
     sst_train_data = SentenceClassificationDataset(sst_train_data, args)
     sst_dev_data = SentenceClassificationDataset(sst_dev_data, args)
     sst_train_dataloader = DataLoader(sst_train_data, shuffle=True, batch_size=args.batch_size_sst,
@@ -266,8 +262,6 @@ def train_multitask(args):
                                     collate_fn=sst_dev_data.collate_fn)
 
     # Para: Paraphrase detection
-    args.gradient_accumulations_para = int(np.ceil(args.batch_size / args.max_batch_size_para))
-    args.batch_size_para = args.batch_size // args.gradient_accumulations_para
     para_train_data = SentencePairDataset(para_train_data, args)
     para_dev_data = SentencePairDataset(para_dev_data, args)
     para_train_dataloader = DataLoader(para_train_data, shuffle=True, batch_size=args.batch_size_para,
@@ -276,8 +270,6 @@ def train_multitask(args):
                                     collate_fn=para_dev_data.collate_fn)
 
     # STS: Semantic textual similarity
-    args.gradient_accumulations_sts = int(np.ceil(args.batch_size / args.max_batch_size_sts))
-    args.batch_size_sts = args.batch_size // args.gradient_accumulations_sts
     sts_train_data = SentencePairDataset(sts_train_data, args)
     sts_dev_data = SentencePairDataset(sts_dev_data, args)
     sts_train_dataloader = DataLoader(sts_train_data, shuffle=True, batch_size=args.batch_size_sts,
@@ -427,6 +419,19 @@ def get_args():
     parser.add_argument("--max_batch_size_sts", type=int, default=128)
 
     args = parser.parse_args()
+
+    # Makes sure that the actual batch sizes are not too large
+    # Gradient accumulations are used to simulate larger batch sizes
+    args.gradient_accumulations_sst = int(np.ceil(args.batch_size / args.max_batch_size_sst))
+    args.batch_size_sst = args.batch_size // args.gradient_accumulations_sst
+    args.gradient_accumulations_para = int(np.ceil(args.batch_size / args.max_batch_size_para))
+    args.batch_size_para = args.batch_size // args.gradient_accumulations_para
+    args.gradient_accumulations_sts = int(np.ceil(args.batch_size / args.max_batch_size_sts))
+    args.batch_size_sts = args.batch_size // args.gradient_accumulations_sts
+
+    # TODO: Display some infos here (e.g. batch size, learning rate, etc.)
+    # See: https://github.com/JosselinSomervilleRoberts/CS224N-Project-BERT-MultiTask/issues/14
+
     return args
 
 if __name__ == "__main__":
