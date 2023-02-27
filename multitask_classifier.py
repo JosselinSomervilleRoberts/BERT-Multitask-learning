@@ -255,7 +255,7 @@ def train_multitask(args):
 
             loss.backward()
 
-            if (i + 1) % gradient_accumulation_steps == 0:
+            if (num_batches_para + 1) % gradient_accumulation_steps == 0:
                 optimizer.step()
                 optimizer.zero_grad()
 
