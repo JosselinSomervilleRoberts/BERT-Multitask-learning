@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from bert import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
+import gc
 
 from datasets import SentenceClassificationDataset, SentencePairDataset, \
     load_multitask_data, load_multitask_test_data
@@ -265,6 +266,7 @@ def train_multitask(args):
             #print("BEFORE: Memory allocated:", torch.cuda.memory_allocated(device="cuda:0") / 1024 ** 3, "GB")
             #print(torch.cuda.memory_summary())
             torch.cuda.empty_cache()
+            gc.collect()
             #print("\n\nAFTER: Memory allocated:", torch.cuda.memory_allocated(device="cuda:0") / 1024 ** 3, "GB")
             #print(torch.cuda.memory_summary())
             #print("\n\n\n")
