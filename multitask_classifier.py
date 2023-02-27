@@ -310,7 +310,7 @@ def train_multitask(args):
         # STS: Semantic textual similarity
         model.zero_grad()
         for batch in tqdm(sts_train_dataloader, desc=f'STS - train-{epoch}', disable=TQDM_DISABLE):
-            train_loss_sts += process_sentiment_batch(batch, objects_group, args)
+            train_loss_sts += process_similarity_batch(batch, objects_group, args)
             num_batches_sts += 1
             finish_training_batch(objects_group, args, step=num_batches_sts, gradient_accumulations=args.gradient_accumulations_sts, total_nb_batches=len(sts_train_dataloader))
         step_optimizer(objects_group, args)
