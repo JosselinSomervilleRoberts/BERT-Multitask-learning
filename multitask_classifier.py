@@ -65,10 +65,12 @@ class MultitaskBERT(nn.Module):
         self.linear_sentiment = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)
 
         # Step 3: Add a linear layer for paraphrase detection
+        self.dropout_paraphrase = nn.Dropout(config.hidden_dropout_prob)
         self.linear_paraphrase = nn.Linear(2 * BERT_HIDDEN_SIZE, 1)
 
         # Step 4: Add a linear layer for semantic textual similarity
         # This is a regression task, so the output should be a single number
+        self.dropout_similarity = nn.Dropout(config.hidden_dropout_prob)
         self.linear_similarity = nn.Linear(2 * BERT_HIDDEN_SIZE, 1)
 
 
@@ -116,6 +118,7 @@ class MultitaskBERT(nn.Module):
 
         # Step 2: Get the logits for paraphrase detection
         cls_embeddings = torch.cat((cls_embeddings_1, cls_embeddings_2), dim=1)
+        cls_embeddings = self.dropout_paraphrase(cls_embeddings)
         logits = self.linear_paraphrase(cls_embeddings)
 
         return logits
@@ -134,9 +137,13 @@ class MultitaskBERT(nn.Module):
 
         # Step 2: Get the logits for semantic textual similarity
         cls_embeddings = torch.cat((cls_embeddings_1, cls_embeddings_2), dim=1)
-        logits = self.linear_similarity(cls_embeddings)
+        cls_embeddings = self.dropout_similarity(cls_embeddings)
+        preds = self.linear_similarity(cls_embeddings)
 
-        return logits
+        # Step 3: Scale preds to be in the range of [0, 5]
+        preds = torch.sigmoid(preds) * 5
+
+        return preds
 
 
 class ObjectsGroup:
