@@ -267,7 +267,7 @@ def train_multitask(args):
             #print("BEFORE: Memory allocated:", torch.cuda.memory_allocated(device="cuda:0") / 1024 ** 3, "GB")
             #print(torch.cuda.memory_summary())
             torch.cuda.empty_cache()
-            gc.collect()
+            # gc.collect()
             #print("\n\nAFTER: Memory allocated:", torch.cuda.memory_allocated(device="cuda:0") / 1024 ** 3, "GB")
             #print(torch.cuda.memory_summary())
             #print("\n\n\n")
