@@ -195,7 +195,7 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
 
         logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-        loss = F.binary_cross_entropy_with_logits(logits, b_labels.view(-1, 1), reduction='sum') / args.batch_size_sts
+        loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item() / args.gradient_accumulations_sts
         objects_group.loss_sum += loss_value
 
@@ -325,7 +325,7 @@ def train_multitask(args):
 
         # SST: Sentiment classification
         for batch in tqdm(sst_train_dataloader, desc=f'SST - train-{epoch}', disable=TQDM_DISABLE):
-            train_loss_sst += process_similarity_batch(batch, objects_group, args)
+            train_loss_sst += process_sentiment_batch(batch, objects_group, args)
             num_batches_sst += 1
             finish_training_batch(objects_group, args, step=num_batches_sst, gradient_accumulations=args.gradient_accumulations_sst, total_nb_batches=len(sst_train_dataloader))
         step_optimizer(objects_group, args)
