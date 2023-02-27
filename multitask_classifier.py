@@ -174,8 +174,8 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'], batch['attention_mask_1'], batch['token_ids_2'], batch['attention_mask_2'], batch['labels'])
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
 
-        logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-        loss = F.binary_cross_entropy_with_logits(logits, b_labels.view(-1, 1), reduction='sum') / args.batch_size_para
+        preds = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum') / args.batch_size_para
         loss_value = loss.item() / args.gradient_accumulations_para
         objects_group.loss_sum += loss_value
 
