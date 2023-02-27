@@ -332,8 +332,8 @@ def train_multitask(args):
         # step_optimizer(objects_group, args)
 
         # Train loss
-        train_loss_sst = train_loss_sst / (num_batches_sst)
-        train_loss_para = train_loss_para / (num_batches_para)
+        # train_loss_sst = train_loss_sst / (num_batches_sst)
+        # train_loss_para = train_loss_para / (num_batches_para)
         train_loss_sts = train_loss_sts / (num_batches_sts)
 
         # Eval on dev
