@@ -253,7 +253,6 @@ def save_model(model, optimizer, args, config, filepath):
     print(f"save the model to {filepath}")
 
 
-## Currently only trains on sst dataset
 def train_multitask(args):
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
     # Load data
@@ -348,16 +347,19 @@ def train_multitask(args):
         sentiment_accuracy,sst_y_pred, sst_sent_ids,
         sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
 
-        # TODO: So far we compute the mean of the three accuracies. Let's try to come up with a better way to combine them.
-        mean_dev_acc = (paraphrase_accuracy + sentiment_accuracy + sts_corr) / 3
+        # Coputes relative improvement compare to a random baseline
+        para_rel_improvement = (paraphrase_accuracy - 0.5) / 0.5
+        sst_rel_improvement = (sentiment_accuracy - 1./N_SENTIMENT_CLASSES) / (1 - 1./N_SENTIMENT_CLASSES)
+        sts_rel_improvement = sts_corr
+        geom_mean_rel_improvement = (para_rel_improvement * sst_rel_improvement * sts_rel_improvement) ** (1/3)
 
-        if mean_dev_acc > best_dev_acc:
-            best_dev_acc = mean_dev_acc
+        if geom_mean_rel_improvement > best_dev_acc:
+            best_dev_acc = geom_mean_rel_improvement
             save_model(model, optimizer, args, config, args.filepath)
 
         print(f"Epoch {epoch}: train loss sst: {train_loss_sst:.3f}, train loss para: {train_loss_para:.3f}, train loss sts: {train_loss_sts:.3f}")
         print(f"Epoch {epoch}: dev acc sst: {sentiment_accuracy:.3f}, dev acc para: {paraphrase_accuracy:.3f}, dev acc sts: {sts_corr:.3f}")
-        print(f"Epoch {epoch}: mean dev acc: {mean_dev_acc:.3f}, best dev acc: {best_dev_acc:.3f}")
+        print(f"Epoch {epoch}: Relative Improvement:  Current: {geom_mean_rel_improvement:.3f}, Best: {best_dev_acc:.3f}")
         print("")
 
 
