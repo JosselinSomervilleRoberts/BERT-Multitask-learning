@@ -21,6 +21,18 @@ from evaluation import model_eval_multitask, test_model_multitask
 
 TQDM_DISABLE = False
 
+class Colors:
+   PURPLE = '\033[95m'
+   CYAN = '\033[96m'
+   DARKCYAN = '\033[36m'
+   BLUE = '\033[94m'
+   GREEN = '\033[92m'
+   YELLOW = '\033[93m'
+   RED = '\033[91m'
+   BOLD = '\033[1m'
+   UNDERLINE = '\033[4m'
+   END = '\033[0m'
+
 # fix the random seed
 def seed_everything(seed=11711):
     random.seed(seed)
@@ -260,6 +272,7 @@ def train_multitask(args):
     # Create the data and its corresponding datasets and dataloader
     sst_train_data, num_labels,para_train_data, sts_train_data = load_multitask_data(args.sst_train,args.para_train,args.sts_train, split ='train')
     sst_dev_data, num_labels,para_dev_data, sts_dev_data = load_multitask_data(args.sst_dev,args.para_dev,args.sts_dev, split ='train')
+    print("")
 
     # SST: Sentiment classification
     sst_train_data = SentenceClassificationDataset(sst_train_data, args)
@@ -311,6 +324,7 @@ def train_multitask(args):
 
     # Run for the specified number of epochs
     for epoch in range(args.epochs):
+        print(Colors.BOLD + f'{"     Epoch " + str(epoch) + "     ":-^{os.get_terminal_size().columns}}' + Colors.END)
         model.train()
         train_loss_sst, train_loss_para, train_loss_sts = 0, 0, 0
         num_batches_sst, num_batches_para, num_batches_sts = 0, 0, 0
@@ -358,6 +372,7 @@ def train_multitask(args):
         print(f"Epoch {epoch}: train loss sst: {train_loss_sst:.3f}, train loss para: {train_loss_para:.3f}, train loss sts: {train_loss_sts:.3f}")
         print(f"Epoch {epoch}: dev acc sst: {sentiment_accuracy:.3f}, dev acc para: {paraphrase_accuracy:.3f}, dev acc sts: {sts_corr:.3f}")
         print(f"Epoch {epoch}: mean dev acc: {mean_dev_acc:.3f}, best dev acc: {best_dev_acc:.3f}")
+        print("-" * os.get_terminal_size().columns)
         print("")
 
 
@@ -383,6 +398,13 @@ def test_model(args):
 
         test_model_multitask(args, model, device)
 
+
+def print_subset_of_args(args, title, list_of_args, color = Colors.BLUE, print_length = 50, var_length = 15):
+    """Prints a subset of the arguments in a nice format."""
+    print("\n" + color + f'{" " + title + " ":█^{print_length}}')
+    for arg in list_of_args:
+        print(Colors.BOLD + f'█ {arg + ": ": >{var_length}}' + Colors.END + f'{getattr(args, arg): <{print_length - var_length - 3}}' +  color  + '█')
+    print("█" * print_length + Colors.END)
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -437,8 +459,13 @@ def get_args():
     args.gradient_accumulations_sts = int(np.ceil(args.batch_size / args.max_batch_size_sts))
     args.batch_size_sts = args.batch_size // args.gradient_accumulations_sts
 
-    # TODO: Display some infos here (e.g. batch size, learning rate, etc.)
-    # See: https://github.com/JosselinSomervilleRoberts/CS224N-Project-BERT-MultiTask/issues/14
+    # Display some infos here (e.g. batch size, learning rate, etc.)
+    print_subset_of_args(args, "DATASETS", ["sst_train", "sst_dev", "sst_test", "para_train", "para_dev", "para_test", "sts_train", "sts_dev", "sts_test"], color = Colors.BLUE, print_length = 51, var_length = 15)
+    print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = 51, var_length = 15)
+    print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = 51, var_length = 25)
+    print_subset_of_args(args, "HYPERPARAMETERS", ["batch_size", "epochs", "lr", "hidden_dropout_prob", "seed"], color = Colors.GREEN, print_length = 51, var_length = 25)
+    print_subset_of_args(args, "OPTIMIZATIONS", ["use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts"], color = Colors.YELLOW, print_length = 51, var_length = 35)
+    print("")
 
     return args
 
