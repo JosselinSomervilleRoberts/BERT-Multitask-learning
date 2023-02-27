@@ -236,6 +236,7 @@ def train_multitask(args):
             num_batches_sts += 1
             if TQDM_DISABLE: print(f'batch {num_batches_sts}/{len(sts_train_dataloader)} STS - loss: {loss.item()}')
 
+
         for batch in tqdm(para_train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
             b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'],
                                                               batch['attention_mask_1'],
