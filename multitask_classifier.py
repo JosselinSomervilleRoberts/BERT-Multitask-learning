@@ -424,7 +424,11 @@ def train_multitask(args):
     objects_group = ObjectsGroup(model, optimizer, scaler)
     args.device = device
     dataloaders = {'sst': sst_train_dataloader, 'para': para_train_dataloader, 'sts': sts_train_dataloader}
-    scheduler = RoundRobinScheduler(dataloaders)
+    scheduler = None
+    if args.task_scheduler == 'round_robin':
+        scheduler = RoundRobinScheduler(dataloaders)
+    elif args.task_scheduler == 'pal':
+        scheduler = PalScheduler(dataloaders)
 
     # Run for the specified number of epochs
     # Here we don't even specify explicitly to reset the scheduler at the end of each epoch (i.e. reset the dataloaders).
@@ -556,8 +560,9 @@ def get_args():
     parser.add_argument("--lr", type=float, help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
                         default=1e-5)
     parser.add_argument("--num_batches_per_epoch", type=int, default=-1)
+    parser.add_argument("--task_scheduler", type=str, choices=('random', 'round_robin', 'pal'), default="round_robin")
 
-    # Oprimizations
+    # Optimizations
     parser.add_argument("--use_amp", action='store_true')
     parser.add_argument("--max_batch_size_sst", type=int, default=256)
     parser.add_argument("--max_batch_size_para", type=int, default=32)
@@ -575,11 +580,12 @@ def get_args():
     args.batch_size_sts = args.batch_size // args.gradient_accumulations_sts
 
     # Display some infos here (e.g. batch size, learning rate, etc.)
-    print_subset_of_args(args, "DATASETS", ["sst_train", "sst_dev", "sst_test", "para_train", "para_dev", "para_test", "sts_train", "sts_dev", "sts_test"], color = Colors.BLUE, print_length = 51, var_length = 15)
-    print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = 51, var_length = 15)
-    print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = 51, var_length = 25)
-    print_subset_of_args(args, "HYPERPARAMETERS", ["batch_size", "epochs", "num_batches_per_epoch", "lr", "hidden_dropout_prob", "seed"], color = Colors.GREEN, print_length = 51, var_length = 25)
-    print_subset_of_args(args, "OPTIMIZATIONS", ["use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts"], color = Colors.YELLOW, print_length = 51, var_length = 35)
+    print_length = 62
+    print_subset_of_args(args, "DATASETS", ["sst_train", "sst_dev", "sst_test", "para_train", "para_dev", "para_test", "sts_train", "sts_dev", "sts_test"], color = Colors.BLUE, print_length = print_length, var_length = 20)
+    print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = print_length, var_length = 20)
+    print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = print_length, var_length = 30)
+    print_subset_of_args(args, "HYPERPARAMETERS", ["batch_size", "epochs", "num_batches_per_epoch", "lr", "hidden_dropout_prob", "seed"], color = Colors.GREEN, print_length = print_length, var_length = 30)
+    print_subset_of_args(args, "OPTIMIZATIONS", ["use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts"], color = Colors.YELLOW, print_length = print_length, var_length = 35)
     print("")
 
     return args
