@@ -410,7 +410,7 @@ def train_multitask(args):
     # Here we don't even specify explicitly to reset the scheduler at the end of each epoch (i.e. reset the dataloaders).
     # This way we make sure that the scheduler goes through the entire dataset before resetting.
     # The num_of_batches is simply defined to be consistent with the size of the datasets.
-    num_batches_per_epoch = len(sst_train_dataloader) + len(para_train_dataloader) + len(sts_train_dataloader)
+    num_batches_per_epoch = int(len(sst_train_dataloader) / args.batch_size_sst + len(para_train_dataloader) / args.batch_size_para + len(sts_train_dataloader) / args.batch_size_sts)
     for epoch in range(args.epochs):
         print(Colors.BOLD + f'{"     Epoch " + str(epoch) + "     ":-^{os.get_terminal_size().columns}}' + Colors.END)
         model.train()
