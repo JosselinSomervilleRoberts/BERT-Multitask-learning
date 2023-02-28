@@ -456,7 +456,7 @@ def train_multitask(args):
             losses = []
             for name in ['sst', 'sts', 'para']:
                 losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=(not args.use_pcgrad)))
-                train_loss[name] += losses[-1]
+                train_loss[name] += losses[-1].item()
                 num_batches[name] += 1
             optimizer.pc_backward(losses)
             optimizer.step()
