@@ -345,7 +345,8 @@ def save_model(model, optimizer, args, config, filepath):
     }
 
     torch.save(save_info, filepath)
-    print(f"save the model to {filepath}")
+    # print(f"save the model to {filepath}")
+    return filepath
 
 
 def train_multitask(args):
@@ -445,11 +446,11 @@ def train_multitask(args):
         geom_mean_rel_improvement = (para_rel_improvement * sst_rel_improvement * sts_rel_improvement) ** (1/3)
 
         # Saves model if it is the best one so far on the dev set
-        color_score = Colors.BLUE
+        color_score, saved = Colors.BLUE, False
         if geom_mean_rel_improvement > best_dev_acc:
             best_dev_acc = geom_mean_rel_improvement
-            save_model(model, optimizer, args, config, args.filepath)
-            color_score = Colors.PURPLE
+            saved_path = save_model(model, optimizer, args, config, args.filepath)
+            color_score, saved = Colors.PURPLE, True
 
         terminal_width = os.get_terminal_size().columns
         spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
@@ -462,8 +463,10 @@ def train_multitask(args):
         print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'   + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.3f}" + " " * spaces_per_task
             + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}' + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.3f}" + " " * spaces_per_task
             + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'  + Colors.END + Colors.CYAN + f"{sts_corr:.3f}")
+        end_print = f'{"Saved to: " + saved_path:>{25 + spaces_per_task}}' if saved else ""
         print(Colors.BOLD + color_score + f'{"Rel improv dev: ":<20}'  + Colors.END + color_score + f"{geom_mean_rel_improvement:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + color_score + f'{" Best rel improv: ":<20}' + Colors.END + color_score + f"{best_dev_acc:.3f}" + Colors.END)
+            + Colors.BOLD + color_score + f'{" Best rel improv: ":<20}' + Colors.END + color_score + f"{best_dev_acc:.3f}"
+            + end_print + Colors.END)
         print("-" * terminal_width)
         print("")
 
