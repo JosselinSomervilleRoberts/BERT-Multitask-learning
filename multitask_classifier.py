@@ -581,9 +581,9 @@ def get_args():
 
     # Optimizations
     parser.add_argument("--use_amp", action='store_true')
-    parser.add_argument("--max_batch_size_sst", type=int, default=256)
-    parser.add_argument("--max_batch_size_para", type=int, default=32)
-    parser.add_argument("--max_batch_size_sts", type=int, default=128)
+    parser.add_argument("--max_batch_size_sst", type=int, default=128)
+    parser.add_argument("--max_batch_size_para", type=int, default=16)
+    parser.add_argument("--max_batch_size_sts", type=int, default=64)
     parser.add_argument("--use_pcgrad", action='store_true')
 
     args = parser.parse_args()
