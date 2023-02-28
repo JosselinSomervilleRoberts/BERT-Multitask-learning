@@ -265,7 +265,6 @@ def save_model(model, optimizer, args, config, filepath):
     print(f"save the model to {filepath}")
 
 
-## Currently only trains on sst dataset
 def train_multitask(args):
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
     # Load data
@@ -362,12 +361,16 @@ def train_multitask(args):
         sentiment_accuracy,sst_y_pred, sst_sent_ids,
         sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
 
-        # TODO: So far we compute the mean of the three accuracies. Let's try to come up with a better way to combine them.
-        mean_dev_acc = (paraphrase_accuracy + sentiment_accuracy + sts_corr) / 3
+        # Coputes relative improvement compare to a random baseline
+        para_rel_improvement = (paraphrase_accuracy - 0.5) / 0.5
+        sst_rel_improvement = (sentiment_accuracy - 1./N_SENTIMENT_CLASSES) / (1 - 1./N_SENTIMENT_CLASSES)
+        sts_rel_improvement = sts_corr
+        geom_mean_rel_improvement = (para_rel_improvement * sst_rel_improvement * sts_rel_improvement) ** (1/3)
 
+        # Saves model if it is the best one so far on the dev set
         color_score = Colors.BLUE
-        if mean_dev_acc > best_dev_acc:
-            best_dev_acc = mean_dev_acc
+        if geom_mean_rel_improvement > best_dev_acc:
+            best_dev_acc = geom_mean_rel_improvement
             save_model(model, optimizer, args, config, args.filepath)
             color_score = Colors.PURPLE
 
@@ -379,8 +382,8 @@ def train_multitask(args):
         print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'   + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.3f}" + " " * spaces_per_task
             + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}' + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.3f}" + " " * spaces_per_task
             + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'  + Colors.END + Colors.CYAN + f"{sts_corr:.3f}")
-        print(Colors.BOLD + color_score + f'{"Mean dev acc: ":<20}'  + Colors.END + color_score + f"{mean_dev_acc:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + color_score + f'{" Best dev acc: ":<20}' + Colors.END + color_score + f"{best_dev_acc:.3f}" + Colors.END)
+        print(Colors.BOLD + color_score + f'{"Rel improv dev: ":<20}'  + Colors.END + color_score + f"{geom_mean_rel_improvement:.3f}" + " " * spaces_per_task
+            + Colors.BOLD + color_score + f'{" Best rel improv: ":<20}' + Colors.END + color_score + f"{best_dev_acc:.3f}" + Colors.END)
         print("-" * terminal_width)
         print("")
 
