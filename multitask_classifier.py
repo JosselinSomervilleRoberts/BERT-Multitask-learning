@@ -286,14 +286,14 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
 
         logits = model.predict_sentiment(b_ids, b_mask)
-        loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size_sst
-        loss_value = loss.item() / args.gradient_accumulations_sst
+        loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+        loss_value = loss.item()
         objects_group.loss_sum += loss_value
         
         if args.use_amp:
-            scaler.scale(loss / args.gradient_accumulations_sst).backward()
+            scaler.scale(loss).backward()
         else:
-            (loss / args.gradient_accumulations_sst).backward()
+            loss.backward()
         return loss_value
 
 
@@ -306,14 +306,14 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
 
         preds = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-        loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum') / args.batch_size_para
-        loss_value = loss.item() / args.gradient_accumulations_para
+        loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum') / args.batch_size
+        loss_value = loss.item()
         objects_group.loss_sum += loss_value
 
         if args.use_amp:
-            scaler.scale(loss / args.gradient_accumulations_para).backward()
+            scaler.scale(loss).backward()
         else:
-            (loss / args.gradient_accumulations_para).backward()
+            loss.backward()
         return loss_value
 
 
@@ -327,13 +327,13 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
 
         preds = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
         loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size
-        loss_value = loss.item() / args.gradient_accumulations_sts
+        loss_value = loss.item()
         objects_group.loss_sum += loss_value
 
         if args.use_amp:
-            scaler.scale(loss / args.gradient_accumulations_sts).backward()
+            scaler.scale(loss).backward()
         else:
-            (loss / args.gradient_accumulations_sts).backward()
+            loss.backward()
         return loss_value
 
 def step_optimizer(objects_group: ObjectsGroup, args: dict, step: int, total_nb_batches = None):
