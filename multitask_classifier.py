@@ -166,6 +166,89 @@ class ObjectsGroup:
         self.scaler = scaler
         self.loss_sum = 0
 
+class Scheduler:
+
+    def __init__(self, dataloaders, reset=True):
+        self.dataloaders = dataloaders
+        if reset: self.reset()
+
+    def reset(self):
+        self.sst_iter = iter(self.dataloaders['sst'])
+        self.para_iter = iter(self.dataloaders['para'])
+        self.sts_iter = iter(self.dataloaders['sts'])
+        self.steps = {'sst': 0, 'para': 0, 'sts': 0}
+
+    def get_SST_batch(self):
+        try:
+            return next(self.sst_iter)
+        except StopIteration:
+            self.sst_iter = iter(self.dataloaders['sst'])
+            return next(self.sst_iter)
+
+    def get_Paraphrase_batch(self):
+        try:
+            return next(self.para_iter)
+        except StopIteration:
+            self.para_iter = iter(self.dataloaders['para'])
+            return next(self.para_iter)
+
+    def get_STS_batch(self):
+        try:
+            return next(self.sts_iter)
+        except StopIteration:
+            self.sts_iter = iter(self.dataloaders['sts'])
+            return next(self.sts_iter)
+
+    def get_batch(self, name: str):
+        if name == "sst": return self.get_SST_batch()
+        elif name == "para": return self.get_Paraphrase_batch()
+        elif name == "sts": return self.get_STS_batch()
+        raise ValueError(f"Unknown batch name: {name}")
+
+    def process_named_batch(self, objects_group: ObjectsGroup, args: dict, name: str):
+        batch = self.get_batch(name)
+        process_fn, gradient_accumulations = None, 0
+        if name == "sst":
+            process_fn = process_sentiment_batch
+            gradient_accumulations = args.gradient_accumulations_sst
+        elif name == "para":
+            process_fn = process_paraphrase_batch
+            gradient_accumulations = args.gradient_accumulations_para
+        elif name == "sts":
+            process_fn = process_similarity_batch
+            gradient_accumulations = args.gradient_accumulations_sts
+        else:
+            raise ValueError(f"Unknown batch name: {name}")
+        
+        # Process the batch
+        loss_of_batch = 0
+        for _ in range(gradient_accumulations):
+            loss_of_batch += process_fn(batch, objects_group, args)
+
+        # Update the model
+        self.steps[name] += 1
+        step_optimizer(objects_group, args, step=self.steps[name])
+
+        return loss_of_batch
+
+
+class RoundRobinScheduler(Scheduler):
+
+    def __init__(self, dataloaders):
+        super().__init__(dataloaders, reset=False)
+        self.order = ['sst', 'para', 'sts']
+        self.reset()
+
+    def reset(self):
+        self.index = 0
+        return super().reset()
+
+    def process_one_batch(self, objects_group: ObjectsGroup, args: dict):
+        name = self.order[self.index]
+        self.index = (self.index + 1) % len(self.order)
+        return name, self.process_named_batch(objects_group, args, name)
+
+
 def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
     device = args.device
     model, scaler = objects_group.model, objects_group.scaler
@@ -225,7 +308,7 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
             (loss / args.gradient_accumulations_sts).backward()
         return loss_value
 
-def step_optimizer(objects_group: ObjectsGroup, args: dict):
+def step_optimizer(objects_group: ObjectsGroup, args: dict, step: int, total_nb_batches = None):
     """Step the optimizer and update the scaler. Returns the loss"""
     optimizer, scaler = objects_group.optimizer, objects_group.scaler
     if args.use_amp:
@@ -237,15 +320,15 @@ def step_optimizer(objects_group: ObjectsGroup, args: dict):
     loss_value = objects_group.loss_sum
     objects_group.loss_sum = 0
     torch.cuda.empty_cache()
+    if TQDM_DISABLE:
+        str_total_nb_batches = "?" if total_nb_batches is None else str(total_nb_batches)
+        print(f'batch {step}/{str_total_nb_batches} STS - loss: {loss_value:.3f}')
     return loss_value
 
 def finish_training_batch(objects_group: ObjectsGroup, args: dict, step: int, gradient_accumulations: int, total_nb_batches = None):
     """Finish training a batch and return whether the model is updated"""
     if step % gradient_accumulations == 0:
-        loss_value = step_optimizer(objects_group, args)
-        if TQDM_DISABLE:
-            str_total_nb_batches = "?" if total_nb_batches is None else str(total_nb_batches)
-            print(f'batch {step}/{str_total_nb_batches} STS - loss: {loss_value:.3f}')
+        step_optimizer(objects_group, args, step, total_nb_batches)
         return True
     return False
 
@@ -320,46 +403,36 @@ def train_multitask(args):
     # Package objects
     objects_group = ObjectsGroup(model, optimizer, scaler)
     args.device = device
+    dataloaders = {'sst': sst_train_dataloader, 'para': para_train_dataloader, 'sts': sts_train_dataloader}
+    scheduler = RoundRobinScheduler(dataloaders)
 
     # Run for the specified number of epochs
+    # Here we don't even specify explicitly to reset the scheduler at the end of each epoch (i.e. reset the dataloaders).
+    # This way we make sure that the scheduler goes through the entire dataset before resetting.
+    # The num_of_batches is simply defined to be consistent with the size of the datasets.
+    num_batches_per_epoch = len(sst_train_dataloader) + len(para_train_dataloader) + len(sts_train_dataloader)
     for epoch in range(args.epochs):
         print(Colors.BOLD + f'{"     Epoch " + str(epoch) + "     ":-^{os.get_terminal_size().columns}}' + Colors.END)
         model.train()
-        train_loss_sst, train_loss_para, train_loss_sts = 0, 0, 0
-        num_batches_sst, num_batches_para, num_batches_sts = 0, 0, 0
+        train_loss = {'sst': 0, 'para': 0, 'sts': 0}
+        num_batches = {'sst': 0, 'para': 0, 'sts': 0}
 
-        # STS: Semantic textual similarity
-        model.zero_grad()
-        for batch in tqdm(sts_train_dataloader, desc=f'STS - train-{epoch}', disable=TQDM_DISABLE):
-            train_loss_sts += process_similarity_batch(batch, objects_group, args)
-            num_batches_sts += 1
-            finish_training_batch(objects_group, args, step=num_batches_sts, gradient_accumulations=args.gradient_accumulations_sts, total_nb_batches=len(sts_train_dataloader))
-        step_optimizer(objects_group, args)
+        for i in tqdm(range(num_batches_per_epoch), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
+            task, loss = scheduler.process_one_batch(objects_group, args)
+            train_loss[task] += loss
+            num_batches[task] += 1
 
-        # Para: Paraphrase detection
-        model.zero_grad()
-        for batch in tqdm(para_train_dataloader, desc=f'Para- train-{epoch}', disable=TQDM_DISABLE):
-            train_loss_para += process_paraphrase_batch(batch, objects_group, args)
-            num_batches_para += 1
-            finish_training_batch(objects_group, args, step=num_batches_para, gradient_accumulations=args.gradient_accumulations_para, total_nb_batches=len(para_train_dataloader))
-        step_optimizer(objects_group, args)
-
-        # SST: Sentiment classification
-        for batch in tqdm(sst_train_dataloader, desc=f'SST - train-{epoch}', disable=TQDM_DISABLE):
-            train_loss_sst += process_sentiment_batch(batch, objects_group, args)
-            num_batches_sst += 1
-            finish_training_batch(objects_group, args, step=num_batches_sst, gradient_accumulations=args.gradient_accumulations_sst, total_nb_batches=len(sst_train_dataloader))
-        step_optimizer(objects_group, args)
-
-        # Train loss
-        train_loss_sst = train_loss_sst / (num_batches_sst)
-        train_loss_para = train_loss_para / (num_batches_para)
-        train_loss_sts = train_loss_sts / (num_batches_sts)
+        # Compute average train loss
+        for task in train_loss:
+            train_loss[task] = train_loss[task] / num_batches[task]
 
         # Eval on dev
         (paraphrase_accuracy, para_y_pred, para_sent_ids,
         sentiment_accuracy,sst_y_pred, sst_sent_ids,
         sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
+        
+        # Useful for deg
+        # paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
 
         # Coputes relative improvement compare to a random baseline
         para_rel_improvement = (paraphrase_accuracy - 0.5) / 0.5
@@ -376,9 +449,12 @@ def train_multitask(args):
 
         terminal_width = os.get_terminal_size().columns
         spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
-        print(Colors.BOLD + f'{"Train loss SST: ":<20}'   + Colors.END + f"{train_loss_sst:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + f'{" Train loss Para: ":<20}' + Colors.END + f"{train_loss_para:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + f'{" Train loss STS: ":<20}'  + Colors.END + f"{train_loss_sts:.3f}")
+        print(Colors.BOLD + f'{"Num batches SST: ":<20}'   + Colors.END + f"{num_batches['sst']:<5}" + " " * spaces_per_task
+            + Colors.BOLD + f'{" Num batches Para: ":<20}' + Colors.END + f"{num_batches['para']:<5}" + " " * spaces_per_task
+            + Colors.BOLD + f'{" Num batches STS: ":<20}'  + Colors.END + f"{num_batches['sts']:<5}")
+        print(Colors.BOLD + f'{"Train loss SST: ":<20}'   + Colors.END + f"{train_loss['sst']:.3f}" + " " * spaces_per_task
+            + Colors.BOLD + f'{" Train loss Para: ":<20}' + Colors.END + f"{train_loss['para']:.3f}" + " " * spaces_per_task
+            + Colors.BOLD + f'{" Train loss STS: ":<20}'  + Colors.END + f"{train_loss['sts']:.3f}")
         print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'   + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.3f}" + " " * spaces_per_task
             + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}' + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.3f}" + " " * spaces_per_task
             + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'  + Colors.END + Colors.CYAN + f"{sts_corr:.3f}")
