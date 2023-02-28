@@ -605,6 +605,12 @@ def get_args():
     print_subset_of_args(args, "OPTIMIZATIONS", ["use_amp", "use_gpu", "use_pcgrad", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts"], color = Colors.YELLOW, print_length = print_length, var_length = 35)
     print("")
 
+    if args.use_amp and not args.use_gpu:
+        raise ValueError("Mixed precision training is only supported on GPU")
+
+    if args.use_pcgrad and args.use_amp:
+        raise ValueError("PCGrad and AMP are not compatible")
+
     return args
 
 if __name__ == "__main__":
