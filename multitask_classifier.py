@@ -410,7 +410,11 @@ def train_multitask(args):
     # Here we don't even specify explicitly to reset the scheduler at the end of each epoch (i.e. reset the dataloaders).
     # This way we make sure that the scheduler goes through the entire dataset before resetting.
     # The num_of_batches is simply defined to be consistent with the size of the datasets.
-    num_batches_per_epoch = int(len(sst_train_dataloader) / args.batch_size_sst + len(para_train_dataloader) / args.batch_size_para + len(sts_train_dataloader) / args.batch_size_sts)
+    num_batches_per_epoch = args.num_batches_per_epoch
+    if num_batches_per_epoch <= 0:
+        num_batches_per_epoch = int(len(sst_train_dataloader) / args.gradient_accumulations_sst) + \
+                                int(len(para_train_dataloader) / args.gradient_accumulations_para) + \
+                                int(len(sts_train_dataloader) / args.gradient_accumulations_sts)
     for epoch in range(args.epochs):
         print(Colors.BOLD + f'{"     Epoch " + str(epoch) + "     ":-^{os.get_terminal_size().columns}}' + Colors.END)
         model.train()
@@ -529,6 +533,7 @@ def get_args():
     parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
     parser.add_argument("--lr", type=float, help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
                         default=1e-5)
+    parser.add_argument("--num_batches_per_epoch", type=int, default=-1)
 
     # Oprimizations
     parser.add_argument("--use_amp", action='store_true')
@@ -551,7 +556,7 @@ def get_args():
     print_subset_of_args(args, "DATASETS", ["sst_train", "sst_dev", "sst_test", "para_train", "para_dev", "para_test", "sts_train", "sts_dev", "sts_test"], color = Colors.BLUE, print_length = 51, var_length = 15)
     print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = 51, var_length = 15)
     print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = 51, var_length = 25)
-    print_subset_of_args(args, "HYPERPARAMETERS", ["batch_size", "epochs", "lr", "hidden_dropout_prob", "seed"], color = Colors.GREEN, print_length = 51, var_length = 25)
+    print_subset_of_args(args, "HYPERPARAMETERS", ["batch_size", "epochs", "num_batches_per_epoch", "lr", "hidden_dropout_prob", "seed"], color = Colors.GREEN, print_length = 51, var_length = 25)
     print_subset_of_args(args, "OPTIMIZATIONS", ["use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts"], color = Colors.YELLOW, print_length = 51, var_length = 35)
     print("")
 
