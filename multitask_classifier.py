@@ -293,9 +293,9 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         
         if args.use_amp:
             scaler.scale(loss).backward()
-        else:
+        elif not args.use_pcgrad:
             loss.backward()
-        return loss_value
+        return loss
 
 
 def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
@@ -313,9 +313,9 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
 
         if args.use_amp:
             scaler.scale(loss).backward()
-        else:
+        elif not args.use_pcgrad:
             loss.backward()
-        return loss_value
+        return loss
 
 
 def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
@@ -333,9 +333,9 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
 
         if args.use_amp:
             scaler.scale(loss).backward()
-        else:
+        elif not args.use_pcgrad:
             loss.backward()
-        return loss_value
+        return loss
 
 def step_optimizer(objects_group: ObjectsGroup, args: dict, step: int, total_nb_batches = None):
     """Step the optimizer and update the scaler. Returns the loss"""
@@ -469,7 +469,7 @@ def train_multitask(args):
 
         # for i in tqdm(range(num_batches_per_epoch), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
         #     task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
-        #     train_loss[task] += loss
+        #     train_loss[task] += loss.item()
         #     num_batches[task] += 1
 
         # Compute average train loss
@@ -589,6 +589,7 @@ def get_args():
     parser.add_argument("--max_batch_size_sst", type=int, default=256)
     parser.add_argument("--max_batch_size_para", type=int, default=32)
     parser.add_argument("--max_batch_size_sts", type=int, default=128)
+    parser.add_argument("--use_pcgrad", action='store_true')
 
     args = parser.parse_args()
 
@@ -607,7 +608,7 @@ def get_args():
     print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = print_length, var_length = 20)
     print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = print_length, var_length = 25)
     print_subset_of_args(args, "HYPERPARAMETERS", ["batch_size", "epochs", "num_batches_per_epoch", "lr", "hidden_dropout_prob", "seed"], color = Colors.GREEN, print_length = print_length, var_length = 30)
-    print_subset_of_args(args, "OPTIMIZATIONS", ["use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts"], color = Colors.YELLOW, print_length = print_length, var_length = 35)
+    print_subset_of_args(args, "OPTIMIZATIONS", ["use_amp", "use_gpu", "use_pcgrad", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts"], color = Colors.YELLOW, print_length = print_length, var_length = 35)
     print("")
 
     return args
