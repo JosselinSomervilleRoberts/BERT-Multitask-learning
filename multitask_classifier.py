@@ -452,19 +452,20 @@ def train_multitask(args):
         train_loss = {'sst': 0, 'para': 0, 'sts': 0}
         num_batches = {'sst': 0, 'para': 0, 'sts': 0}
 
-        for i in tqdm(range(int(num_batches_per_epoch / 3)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
-            losses = []
-            for name in ['sst', 'sts', 'para']:
-                losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=(not args.use_pcgrad)))
-                train_loss[name] += losses[-1].item()
-                num_batches[name] += 1
-            optimizer.pc_backward(losses)
-            optimizer.step()
-
-        # for i in tqdm(range(num_batches_per_epoch), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
-        #     task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
-        #     train_loss[task] += loss.item()
-        #     num_batches[task] += 1
+        if args.use_pcgrad:
+            for i in tqdm(range(int(num_batches_per_epoch / 3)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
+                losses = []
+                for name in ['sst', 'sts', 'para']:
+                    losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=(not args.use_pcgrad)))
+                    train_loss[name] += losses[-1].item()
+                    num_batches[name] += 1
+                optimizer.pc_backward(losses)
+                optimizer.step()
+        else:
+            for i in tqdm(range(num_batches_per_epoch), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
+                task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
+                train_loss[task] += loss.item()
+                num_batches[task] += 1
 
         # Compute average train loss
         for task in train_loss:
@@ -610,6 +611,10 @@ def get_args():
 
     if args.use_pcgrad and args.use_amp:
         raise ValueError("PCGrad and AMP are not compatible")
+
+    if args.use_pcgrad:
+        # Prints warning that PCGrad does not use task scheduler
+        print(Colors.RED + "WARNING: PCGrad does not use task scheduler" + Colors.END)
 
     return args
 
