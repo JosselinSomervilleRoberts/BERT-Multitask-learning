@@ -289,7 +289,7 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         embeddings = model.get_embeddings(b_ids, b_mask)
         logits = model.predict_sentiment(b_ids, b_mask)
         #Define SMART loss
-        smart_loss_fn = SMARTLoss(eval_fn = eval, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)
+        smart_loss_fn = SMARTLoss(eval_fn = model.predict_sentiment, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)
         #Compute classification loss
         loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
