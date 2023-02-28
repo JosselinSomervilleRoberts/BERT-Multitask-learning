@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import torch
 from torch import nn
+from smart_pytorch import SMARTLoss, kl_loss, sym_kl_loss
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
@@ -285,9 +286,15 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
         b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
 
+        embeddings = model.get_embeddings(b_ids, b_mask)
         logits = model.predict_sentiment(b_ids, b_mask)
+        #Define SMART loss
+        smart_loss_fn = SMARTLoss(eval_fn = eval, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)
+        #Compute classification loss
         loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
+        #Compute SMART loss
+        loss_value += 0.2 * smart_loss_fn(embeddings, logits)
         objects_group.loss_sum += loss_value
         
         if args.use_amp:
@@ -306,8 +313,12 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
 
         preds = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        #Define SMART loss
+        #smart_loss_fn = SMARTLoss(eval_fn = eval, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)
         loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum') / args.batch_size
         loss_value = loss.item()
+        #Compute SMART loss
+        #loss_value += 0.2 * smart_loss_fn(embeddings, logits)
         objects_group.loss_sum += loss_value
 
         if args.use_amp:
