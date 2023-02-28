@@ -273,7 +273,7 @@ class PalScheduler(Scheduler):
         probs /= np.sum(probs)
 
         # Sample a dataset
-        name = np.random.choice(self.order, p=probs)
+        name = np.random.choice(self.names, p=probs)
         return name, self.process_named_batch(objects_group, args, name)
 
 
