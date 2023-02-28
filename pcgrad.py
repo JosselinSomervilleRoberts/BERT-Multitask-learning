@@ -17,6 +17,10 @@ class PCGrad():
     def optimizer(self):
         return self._optim
 
+    @property
+    def state_dict(self):
+        return self._optim.state_dict()
+
     def zero_grad(self):
         '''
         clear the gradient of the parameters
