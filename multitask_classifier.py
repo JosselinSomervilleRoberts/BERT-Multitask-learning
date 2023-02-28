@@ -11,6 +11,7 @@ from optimizer import AdamW
 from torch.cuda.amp import GradScaler, autocast
 from contextlib import nullcontext
 from tqdm import tqdm
+from itertools import cycle
 import gc
 
 from datasets import SentenceClassificationDataset, SentencePairDataset, \
@@ -170,6 +171,7 @@ class Scheduler:
 
     def __init__(self, dataloaders, reset=True):
         self.dataloaders = dataloaders
+        self.names = list(dataloaders.keys())
         if reset: self.reset()
 
     def reset(self):
@@ -182,21 +184,21 @@ class Scheduler:
         try:
             return next(self.sst_iter)
         except StopIteration:
-            self.sst_iter = iter(self.dataloaders['sst'])
+            self.sst_iter = cycle(self.dataloaders['sst'])
             return next(self.sst_iter)
 
     def get_Paraphrase_batch(self):
         try:
             return next(self.para_iter)
         except StopIteration:
-            self.para_iter = iter(self.dataloaders['para'])
+            self.para_iter = cycle(self.dataloaders['para'])
             return next(self.para_iter)
 
     def get_STS_batch(self):
         try:
             return next(self.sts_iter)
         except StopIteration:
-            self.sts_iter = iter(self.dataloaders['sts'])
+            self.sts_iter = cycle(self.dataloaders['sts'])
             return next(self.sts_iter)
 
     def get_batch(self, name: str):
@@ -232,20 +234,46 @@ class Scheduler:
         return loss_of_batch
 
 
+class RandomScheduler(Scheduler):
+
+    def __init__(self, dataloaders):
+        super().__init__(dataloaders, reset=True)
+
+    def process_one_batch(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict):
+        name = random.choice(self.names)
+        return name, self.process_named_batch(objects_group, args, name)
+
+
 class RoundRobinScheduler(Scheduler):
 
     def __init__(self, dataloaders):
         super().__init__(dataloaders, reset=False)
-        self.order = ['sst', 'para', 'sts']
         self.reset()
 
     def reset(self):
         self.index = 0
         return super().reset()
 
-    def process_one_batch(self, objects_group: ObjectsGroup, args: dict):
+    def process_one_batch(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict):
         name = self.order[self.index]
         self.index = (self.index + 1) % len(self.order)
+        return name, self.process_named_batch(objects_group, args, name)
+
+
+class PalScheduler(Scheduler):
+
+    def __init__(self, dataloaders):
+        super().__init__(dataloaders, reset=False)
+        self.sizes = np.array([len(dataloaders[dataset]) for dataset in self.names])
+        self.reset()
+
+    def process_one_batch(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict):
+        alpha = 1 - 0.8 * (epoch - 1) / (num_epochs - 1)
+        probs = self.sizes ** alpha
+        probs /= np.sum(probs)
+
+        # Sample a dataset
+        name = np.random.choice(self.names, p=probs)
         return name, self.process_named_batch(objects_group, args, name)
 
 
@@ -405,7 +433,13 @@ def train_multitask(args):
     objects_group = ObjectsGroup(model, optimizer, scaler)
     args.device = device
     dataloaders = {'sst': sst_train_dataloader, 'para': para_train_dataloader, 'sts': sts_train_dataloader}
-    scheduler = RoundRobinScheduler(dataloaders)
+    scheduler = None
+    if args.task_scheduler == 'round_robin':
+        scheduler = RoundRobinScheduler(dataloaders)
+    elif args.task_scheduler == 'pal':
+        scheduler = PalScheduler(dataloaders)
+    elif args.task_scheduler == 'random':
+        scheduler = RandomScheduler(dataloaders)
 
     # Run for the specified number of epochs
     # Here we don't even specify explicitly to reset the scheduler at the end of each epoch (i.e. reset the dataloaders).
@@ -423,7 +457,7 @@ def train_multitask(args):
         num_batches = {'sst': 0, 'para': 0, 'sts': 0}
 
         for i in tqdm(range(num_batches_per_epoch), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
-            task, loss = scheduler.process_one_batch(objects_group, args)
+            task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
             train_loss[task] += loss
             num_batches[task] += 1
 
@@ -537,8 +571,9 @@ def get_args():
     parser.add_argument("--lr", type=float, help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
                         default=1e-5)
     parser.add_argument("--num_batches_per_epoch", type=int, default=-1)
+    parser.add_argument("--task_scheduler", type=str, choices=('random', 'round_robin', 'pal'), default="round_robin")
 
-    # Oprimizations
+    # Optimizations
     parser.add_argument("--use_amp", action='store_true')
     parser.add_argument("--max_batch_size_sst", type=int, default=256)
     parser.add_argument("--max_batch_size_para", type=int, default=32)
@@ -556,11 +591,12 @@ def get_args():
     args.batch_size_sts = args.batch_size // args.gradient_accumulations_sts
 
     # Display some infos here (e.g. batch size, learning rate, etc.)
-    print_subset_of_args(args, "DATASETS", ["sst_train", "sst_dev", "sst_test", "para_train", "para_dev", "para_test", "sts_train", "sts_dev", "sts_test"], color = Colors.BLUE, print_length = 51, var_length = 15)
-    print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = 51, var_length = 15)
-    print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = 51, var_length = 25)
-    print_subset_of_args(args, "HYPERPARAMETERS", ["batch_size", "epochs", "num_batches_per_epoch", "lr", "hidden_dropout_prob", "seed"], color = Colors.GREEN, print_length = 51, var_length = 25)
-    print_subset_of_args(args, "OPTIMIZATIONS", ["use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts"], color = Colors.YELLOW, print_length = 51, var_length = 35)
+    print_length = 62
+    print_subset_of_args(args, "DATASETS", ["sst_train", "sst_dev", "sst_test", "para_train", "para_dev", "para_test", "sts_train", "sts_dev", "sts_test"], color = Colors.BLUE, print_length = print_length, var_length = 20)
+    print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = print_length, var_length = 20)
+    print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = print_length, var_length = 25)
+    print_subset_of_args(args, "HYPERPARAMETERS", ["batch_size", "epochs", "num_batches_per_epoch", "lr", "hidden_dropout_prob", "seed"], color = Colors.GREEN, print_length = print_length, var_length = 30)
+    print_subset_of_args(args, "OPTIMIZATIONS", ["use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts"], color = Colors.YELLOW, print_length = print_length, var_length = 35)
     print("")
 
     return args
