@@ -365,14 +365,23 @@ def train_multitask(args):
         # TODO: So far we compute the mean of the three accuracies. Let's try to come up with a better way to combine them.
         mean_dev_acc = (paraphrase_accuracy + sentiment_accuracy + sts_corr) / 3
 
+        color_score = Colors.BLUE
         if mean_dev_acc > best_dev_acc:
             best_dev_acc = mean_dev_acc
             save_model(model, optimizer, args, config, args.filepath)
+            color_score = Colors.PURPLE
 
-        print(f"Epoch {epoch}: train loss sst: {train_loss_sst:.3f}, train loss para: {train_loss_para:.3f}, train loss sts: {train_loss_sts:.3f}")
-        print(f"Epoch {epoch}: dev acc sst: {sentiment_accuracy:.3f}, dev acc para: {paraphrase_accuracy:.3f}, dev acc sts: {sts_corr:.3f}")
-        print(f"Epoch {epoch}: mean dev acc: {mean_dev_acc:.3f}, best dev acc: {best_dev_acc:.3f}")
-        print("-" * os.get_terminal_size().columns)
+        terminal_width = os.get_terminal_size().columns
+        spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
+        print(Colors.BOLD + f'{"Train loss SST: ":<20}'   + Colors.END + f"{train_loss_sst:.3f}" + " " * spaces_per_task
+            + Colors.BOLD + f'{" Train loss Para: ":<20}' + Colors.END + f"{train_loss_para:.3f}" + " " * spaces_per_task
+            + Colors.BOLD + f'{" Train loss STS: ":<20}'  + Colors.END + f"{train_loss_sts:.3f}")
+        print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'   + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.3f}" + " " * spaces_per_task
+            + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}' + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.3f}" + " " * spaces_per_task
+            + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'  + Colors.END + Colors.CYAN + f"{sts_corr:.3f}")
+        print(Colors.BOLD + color_score + f'{"Mean dev acc: ":<20}'  + Colors.END + color_score + f"{mean_dev_acc:.3f}" + " " * spaces_per_task
+            + Colors.BOLD + color_score + f'{" Best dev acc: ":<20}' + Colors.END + color_score + f"{best_dev_acc:.3f}" + Colors.END)
+        print("-" * terminal_width)
         print("")
 
 
