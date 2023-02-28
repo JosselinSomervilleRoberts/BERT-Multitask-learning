@@ -12,6 +12,7 @@ from torch.cuda.amp import GradScaler, autocast
 from contextlib import nullcontext
 from tqdm import tqdm
 from itertools import cycle
+from pcgrad import PCGrad
 import gc
 
 from datasets import SentenceClassificationDataset, SentencePairDataset, \
@@ -207,7 +208,7 @@ class Scheduler:
         elif name == "sts": return self.get_STS_batch()
         raise ValueError(f"Unknown batch name: {name}")
 
-    def process_named_batch(self, objects_group: ObjectsGroup, args: dict, name: str):
+    def process_named_batch(self, objects_group: ObjectsGroup, args: dict, name: str, apply_optimization: bool = True):
         batch = self.get_batch(name)
         process_fn, gradient_accumulations = None, 0
         if name == "sst":
@@ -229,7 +230,7 @@ class Scheduler:
 
         # Update the model
         self.steps[name] += 1
-        step_optimizer(objects_group, args, step=self.steps[name])
+        if apply_optimization: step_optimizer(objects_group, args, step=self.steps[name])
 
         return loss_of_batch
 
@@ -426,6 +427,7 @@ def train_multitask(args):
 
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
+    optimizer = PCGrad(optimizer)
     scaler = GradScaler()
     best_dev_acc = 0
 
@@ -456,10 +458,19 @@ def train_multitask(args):
         train_loss = {'sst': 0, 'para': 0, 'sts': 0}
         num_batches = {'sst': 0, 'para': 0, 'sts': 0}
 
-        for i in tqdm(range(num_batches_per_epoch), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
-            task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
-            train_loss[task] += loss
-            num_batches[task] += 1
+        for i in tqdm(range(int(num_batches_per_epoch / 3)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
+            losses = []
+            for name in ['sst', 'sts', 'para']:
+                losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=True))
+                train_loss[name] += losses[-1]
+                num_batches[name] += 1
+            optimizer.pc_backward(losses)
+            optimizer.step()
+
+        # for i in tqdm(range(num_batches_per_epoch), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
+        #     task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
+        #     train_loss[task] += loss
+        #     num_batches[task] += 1
 
         # Compute average train loss
         for task in train_loss:
