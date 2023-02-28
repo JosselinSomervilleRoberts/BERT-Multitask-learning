@@ -326,7 +326,7 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
 
         preds = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-        loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size
+        loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size_sts
         loss_value = loss.item() / args.gradient_accumulations_sts
         objects_group.loss_sum += loss_value
 
