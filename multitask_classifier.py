@@ -11,6 +11,7 @@ from optimizer import AdamW
 from torch.cuda.amp import GradScaler, autocast
 from contextlib import nullcontext
 from tqdm import tqdm
+from itertools import cycle
 import gc
 
 from datasets import SentenceClassificationDataset, SentencePairDataset, \
@@ -182,21 +183,21 @@ class Scheduler:
         try:
             return next(self.sst_iter)
         except StopIteration:
-            self.sst_iter = iter(self.dataloaders['sst'])
+            self.sst_iter = cycle(self.dataloaders['sst'])
             return next(self.sst_iter)
 
     def get_Paraphrase_batch(self):
         try:
             return next(self.para_iter)
         except StopIteration:
-            self.para_iter = iter(self.dataloaders['para'])
+            self.para_iter = cycle(self.dataloaders['para'])
             return next(self.para_iter)
 
     def get_STS_batch(self):
         try:
             return next(self.sts_iter)
         except StopIteration:
-            self.sts_iter = iter(self.dataloaders['sts'])
+            self.sts_iter = cycle(self.dataloaders['sts'])
             return next(self.sts_iter)
 
     def get_batch(self, name: str):
@@ -243,9 +244,27 @@ class RoundRobinScheduler(Scheduler):
         self.index = 0
         return super().reset()
 
-    def process_one_batch(self, objects_group: ObjectsGroup, args: dict):
+    def process_one_batch(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict):
         name = self.order[self.index]
         self.index = (self.index + 1) % len(self.order)
+        return name, self.process_named_batch(objects_group, args, name)
+
+
+class PalScheduler(Scheduler):
+
+    def __init__(self, dataloaders):
+        super().__init__(dataloaders, reset=False)
+        self.order = ['sst', 'para', 'sts']
+        self.sizes = np.array([len(dataloaders[dataset]) for dataset in self.order])
+        self.reset()
+
+    def process_one_batch(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict):
+        alpha = 1 - 0.8 * (epoch - 1) / (num_epochs - 1)
+        probs = self.sizes ** alpha
+        probs /= np.sum(probs)
+
+        # Sample a dataset
+        name = np.random.choice(self.order, p=probs)
         return name, self.process_named_batch(objects_group, args, name)
 
 
@@ -423,7 +442,7 @@ def train_multitask(args):
         num_batches = {'sst': 0, 'para': 0, 'sts': 0}
 
         for i in tqdm(range(num_batches_per_epoch), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
-            task, loss = scheduler.process_one_batch(objects_group, args)
+            task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
             train_loss[task] += loss
             num_batches[task] += 1
 
