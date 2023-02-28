@@ -17,6 +17,10 @@ class PCGrad():
     def optimizer(self):
         return self._optim
 
+    @property
+    def param_groups(self):
+        return self._optim.param_groups
+
     def state_dict(self):
         return self._optim.state_dict()
 

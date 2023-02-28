@@ -455,7 +455,7 @@ def train_multitask(args):
         for i in tqdm(range(int(num_batches_per_epoch / 3)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
             losses = []
             for name in ['sst', 'sts', 'para']:
-                losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=True))
+                losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=(not args.use_pcgrad)))
                 train_loss[name] += losses[-1]
                 num_batches[name] += 1
             optimizer.pc_backward(losses)
