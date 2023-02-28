@@ -291,10 +291,8 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss_value = loss.item()
         objects_group.loss_sum += loss_value
         
-        if args.use_amp:
-            scaler.scale(loss).backward()
-        elif not args.use_pcgrad:
-            loss.backward()
+        if args.use_amp: loss = scaler.scale(loss)
+        if not args.use_pcgrad: loss.backward()
         return loss
 
 
@@ -310,11 +308,9 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum') / args.batch_size
         loss_value = loss.item()
         objects_group.loss_sum += loss_value
-
-        if args.use_amp:
-            scaler.scale(loss).backward()
-        elif not args.use_pcgrad:
-            loss.backward()
+        
+        if args.use_amp: loss = scaler.scale(loss)
+        if not args.use_pcgrad: loss.backward()
         return loss
 
 
@@ -330,11 +326,9 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
         objects_group.loss_sum += loss_value
-
-        if args.use_amp:
-            scaler.scale(loss).backward()
-        elif not args.use_pcgrad:
-            loss.backward()
+        
+        if args.use_amp: loss = scaler.scale(loss)
+        if not args.use_pcgrad: loss.backward()
         return loss
 
 def step_optimizer(objects_group: ObjectsGroup, args: dict, step: int, total_nb_batches = None):
