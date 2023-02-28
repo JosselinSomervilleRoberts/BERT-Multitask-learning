@@ -171,6 +171,7 @@ class Scheduler:
 
     def __init__(self, dataloaders, reset=True):
         self.dataloaders = dataloaders
+        self.names = list(dataloaders.keys())
         if reset: self.reset()
 
     def reset(self):
@@ -233,11 +234,20 @@ class Scheduler:
         return loss_of_batch
 
 
+class RandomScheduler(Scheduler):
+
+    def __init__(self, dataloaders):
+        super().__init__(dataloaders, reset=True)
+
+    def process_one_batch(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict):
+        name = random.choice(self.names)
+        return name, self.process_named_batch(objects_group, args, name)
+
+
 class RoundRobinScheduler(Scheduler):
 
     def __init__(self, dataloaders):
         super().__init__(dataloaders, reset=False)
-        self.order = ['sst', 'para', 'sts']
         self.reset()
 
     def reset(self):
@@ -254,8 +264,7 @@ class PalScheduler(Scheduler):
 
     def __init__(self, dataloaders):
         super().__init__(dataloaders, reset=False)
-        self.order = ['sst', 'para', 'sts']
-        self.sizes = np.array([len(dataloaders[dataset]) for dataset in self.order])
+        self.sizes = np.array([len(dataloaders[dataset]) for dataset in self.names])
         self.reset()
 
     def process_one_batch(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict):
@@ -429,6 +438,8 @@ def train_multitask(args):
         scheduler = RoundRobinScheduler(dataloaders)
     elif args.task_scheduler == 'pal':
         scheduler = PalScheduler(dataloaders)
+    elif args.task_scheduler == 'random':
+        scheduler = RandomScheduler(dataloaders)
 
     # Run for the specified number of epochs
     # Here we don't even specify explicitly to reset the scheduler at the end of each epoch (i.e. reset the dataloaders).
