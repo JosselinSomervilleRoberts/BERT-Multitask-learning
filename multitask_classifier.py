@@ -12,6 +12,7 @@ from torch.cuda.amp import GradScaler, autocast
 from contextlib import nullcontext
 from tqdm import tqdm
 from itertools import cycle
+from pcgrad import PCGrad
 import gc
 
 from datasets import SentenceClassificationDataset, SentencePairDataset, \
@@ -207,7 +208,7 @@ class Scheduler:
         elif name == "sts": return self.get_STS_batch()
         raise ValueError(f"Unknown batch name: {name}")
 
-    def process_named_batch(self, objects_group: ObjectsGroup, args: dict, name: str):
+    def process_named_batch(self, objects_group: ObjectsGroup, args: dict, name: str, apply_optimization: bool = True):
         batch = self.get_batch(name)
         process_fn, gradient_accumulations = None, 0
         if name == "sst":
@@ -229,7 +230,7 @@ class Scheduler:
 
         # Update the model
         self.steps[name] += 1
-        step_optimizer(objects_group, args, step=self.steps[name])
+        if apply_optimization: step_optimizer(objects_group, args, step=self.steps[name])
 
         return loss_of_batch
 
@@ -290,11 +291,9 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss_value = loss.item()
         objects_group.loss_sum += loss_value
         
-        if args.use_amp:
-            scaler.scale(loss).backward()
-        else:
-            loss.backward()
-        return loss_value
+        if args.use_amp: loss = scaler.scale(loss)
+        if not args.use_pcgrad: loss.backward()
+        return loss
 
 
 def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
@@ -309,12 +308,10 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum') / args.batch_size
         loss_value = loss.item()
         objects_group.loss_sum += loss_value
-
-        if args.use_amp:
-            scaler.scale(loss).backward()
-        else:
-            loss.backward()
-        return loss_value
+        
+        if args.use_amp: loss = scaler.scale(loss)
+        if not args.use_pcgrad: loss.backward()
+        return loss
 
 
 def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
@@ -329,12 +326,10 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
         objects_group.loss_sum += loss_value
-
-        if args.use_amp:
-            scaler.scale(loss).backward()
-        else:
-            loss.backward()
-        return loss_value
+        
+        if args.use_amp: loss = scaler.scale(loss)
+        if not args.use_pcgrad: loss.backward()
+        return loss
 
 def step_optimizer(objects_group: ObjectsGroup, args: dict, step: int, total_nb_batches = None):
     """Step the optimizer and update the scaler. Returns the loss"""
@@ -426,6 +421,7 @@ def train_multitask(args):
 
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
+    optimizer = PCGrad(optimizer)
     scaler = GradScaler()
     best_dev_acc = 0
 
@@ -456,10 +452,20 @@ def train_multitask(args):
         train_loss = {'sst': 0, 'para': 0, 'sts': 0}
         num_batches = {'sst': 0, 'para': 0, 'sts': 0}
 
-        for i in tqdm(range(num_batches_per_epoch), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
-            task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
-            train_loss[task] += loss
-            num_batches[task] += 1
+        if args.use_pcgrad:
+            for i in tqdm(range(int(num_batches_per_epoch / 3)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
+                losses = []
+                for name in ['sst', 'sts', 'para']:
+                    losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=(not args.use_pcgrad)))
+                    train_loss[name] += losses[-1].item()
+                    num_batches[name] += 1
+                optimizer.pc_backward(losses)
+                optimizer.step()
+        else:
+            for i in tqdm(range(num_batches_per_epoch), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
+                task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
+                train_loss[task] += loss.item()
+                num_batches[task] += 1
 
         # Compute average train loss
         for task in train_loss:
@@ -575,9 +581,10 @@ def get_args():
 
     # Optimizations
     parser.add_argument("--use_amp", action='store_true')
-    parser.add_argument("--max_batch_size_sst", type=int, default=256)
-    parser.add_argument("--max_batch_size_para", type=int, default=32)
-    parser.add_argument("--max_batch_size_sts", type=int, default=128)
+    parser.add_argument("--max_batch_size_sst", type=int, default=64)
+    parser.add_argument("--max_batch_size_para", type=int, default=16)
+    parser.add_argument("--max_batch_size_sts", type=int, default=32)
+    parser.add_argument("--use_pcgrad", action='store_true')
 
     args = parser.parse_args()
 
@@ -596,8 +603,18 @@ def get_args():
     print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = print_length, var_length = 20)
     print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = print_length, var_length = 25)
     print_subset_of_args(args, "HYPERPARAMETERS", ["batch_size", "epochs", "num_batches_per_epoch", "lr", "hidden_dropout_prob", "seed"], color = Colors.GREEN, print_length = print_length, var_length = 30)
-    print_subset_of_args(args, "OPTIMIZATIONS", ["use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts"], color = Colors.YELLOW, print_length = print_length, var_length = 35)
+    print_subset_of_args(args, "OPTIMIZATIONS", ["use_amp", "use_gpu", "use_pcgrad", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts"], color = Colors.YELLOW, print_length = print_length, var_length = 35)
     print("")
+
+    if args.use_amp and not args.use_gpu:
+        raise ValueError("Mixed precision training is only supported on GPU")
+
+    if args.use_pcgrad and args.use_amp:
+        raise ValueError("PCGrad and AMP are not compatible")
+
+    if args.use_pcgrad:
+        # Prints warning that PCGrad does not use task scheduler
+        print(Colors.RED + "WARNING: PCGrad does not use task scheduler" + Colors.END)
 
     return args
 
