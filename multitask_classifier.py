@@ -491,13 +491,13 @@ def train_multitask(args):
             dev_acc, _, _ = infos[task]['eval_fn'](sst_dev_dataloader, model, device)
             if dev_acc > infos[task]['best_dev_acc']:
                 infos[task]['best_dev_acc'] = dev_acc
-                saved_path = infos[task]['best_model'] = copy.deepcopy(infos[task]['layer'].state_dict())
+                nfos[task]['best_model'] = copy.deepcopy(infos[task]['layer'].state_dict())
                 color_score, saved = Colors.PURPLE, True
             
             # Print dev accuracy
             terminal_width = os.get_terminal_size().columns
             spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
-            end_print = f'{"Saved to: " + saved_path:>{25 + spaces_per_task}}' if saved else ""
+            end_print = "Saved" if saved else ""
             print(Colors.BOLD + color_score + f'{"Cur acc dev: ":<20}'   + Colors.END + color_score + f"{dev_acc:.3f}" + " " * spaces_per_task
                 + Colors.BOLD + color_score + f'{" Best acc dev: ":<20}' + Colors.END + color_score + f"{best_dev_acc:.3f}"
                 + end_print + Colors.END)
