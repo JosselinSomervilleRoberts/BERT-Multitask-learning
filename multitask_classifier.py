@@ -307,8 +307,9 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss_value = loss.item()
         objects_group.loss_sum += loss_value
         
-        if args.use_amp and args.projection == "none": loss = scaler.scale(loss)
-        if args.projection == "none": loss.backward()
+        if args.projection == "none":
+            if args.use_amp: scaler.scale(loss).backward()
+            else: loss.backward()
         return loss
 
 
@@ -325,8 +326,9 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss_value = loss.item()
         objects_group.loss_sum += loss_value
         
-        if args.use_amp and args.projection == "none": loss = scaler.scale(loss)
-        if args.projection == "none": loss.backward()
+        if args.projection == "none":
+            if args.use_amp: scaler.scale(loss).backward()
+            else: loss.backward()
         return loss
 
 
@@ -343,8 +345,9 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss_value = loss.item()
         objects_group.loss_sum += loss_value
         
-        if args.use_amp and args.projection == "none": loss = scaler.scale(loss)
-        if args.projection == "none": loss.backward()
+        if args.projection == "none":
+            if args.use_amp: scaler.scale(loss).backward()
+            else: loss.backward()
         return loss
 
 def step_optimizer(objects_group: ObjectsGroup, args: dict, step: int, total_nb_batches = None):
