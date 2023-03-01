@@ -150,7 +150,7 @@ class MultitaskBERT(nn.Module):
         logits = self.linear_paraphrase(cls_embeddings)
 
         # Step 4: Apply sigmoid to get the probability
-        logits = torch.sigmoid(logits)
+        # logits = torch.sigmoid(logits)
 
         return logits
 
