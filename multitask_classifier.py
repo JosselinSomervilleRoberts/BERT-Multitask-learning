@@ -503,7 +503,9 @@ def train_multitask(args):
                     + end_print + Colors.END)
 
                 if epoch != args.epochs - 1: print("")
-                elif epoch - last_improv >= args.patience: break
+                elif epoch - last_improv >= args.patience:
+                    print(Colors.BOLD + Colors.RED + f'{"Early stopping":^{os.get_terminal_size().columns}}' + Colors.END)
+                    break
             print("-" * terminal_width)
             print('\n\n')
 
@@ -596,6 +598,7 @@ def train_multitask(args):
             best_dev_accuracies = {'sst': sentiment_accuracy, 'para': paraphrase_accuracy, 'sts': sts_corr}
             saved_path = save_model(model, optimizer, args, config, args.filepath)
             color_score, saved = Colors.PURPLE, True
+            last_improv = epoch
 
         terminal_width = os.get_terminal_size().columns
         spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
@@ -620,7 +623,9 @@ def train_multitask(args):
         print("-" * terminal_width)
         print("")
 
-        if epoch - last_improv >= args.patience: break
+        if epoch - last_improv >= args.patience:
+            print(Colors.BOLD + Colors.RED + f'{"Early stopping":^{os.get_terminal_size().columns}}' + Colors.END)
+            break
 
 
 
