@@ -726,7 +726,7 @@ def get_args():
     
     optim_args = ["use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts", "patience"]
     if args.option == "finetune":
-        optin_args += ["task_scheduler", "projection"]
+        optim_args += ["task_scheduler", "projection"]
         if args.projection == "vaccine":
             optim_args += ["beta_vaccine"]
     print_subset_of_args(args, "OPTIMIZATIONS", optim_args, color = Colors.YELLOW, print_length = print_length, var_length = 35)
