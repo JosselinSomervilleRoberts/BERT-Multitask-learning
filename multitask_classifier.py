@@ -79,17 +79,17 @@ class MultitaskBERT(nn.Module):
         #   - Calls forward() to get the BERT embeddings
         #   - Applies a dropout layer
         #   - Applies a linear layer to get the logits
-        self.dropout_sentiment = nn.Modulelist([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
-        self.linear_sentiment = nn.Modulelist([nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(config.n_hidden_layers)] + [nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)])
+        self.dropout_sentiment = nn.ModuleList([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
+        self.linear_sentiment = nn.ModuleList([nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(config.n_hidden_layers)] + [nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)])
 
         # Step 3: Add a linear layer for paraphrase detection
-        self.dropout_paraphrase = nn.Modulelist([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
-        self.linear_paraphrase = nn.Modulelist([nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(config.n_hidden_layers)] + [nn.Linear(BERT_HIDDEN_SIZE, 1)])
+        self.dropout_paraphrase = nn.ModuleList([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
+        self.linear_paraphrase = nn.ModuleList([nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(config.n_hidden_layers)] + [nn.Linear(BERT_HIDDEN_SIZE, 1)])
 
         # Step 4: Add a linear layer for semantic textual similarity
         # This is a regression task, so the output should be a single number
-        self.dropout_similarity = nn.Modulelist([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
-        self.linear_similarity = nn.Modulelist([nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(config.n_hidden_layers)] + [nn.Linear(BERT_HIDDEN_SIZE, 1)])
+        self.dropout_similarity = nn.ModuleList([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
+        self.linear_similarity = nn.ModuleList([nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(config.n_hidden_layers)] + [nn.Linear(BERT_HIDDEN_SIZE, 1)])
 
 
     def forward(self, input_ids, attention_mask):
