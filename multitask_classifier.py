@@ -171,7 +171,7 @@ class MultitaskBERT(nn.Module):
         preds = self.linear_similarity(cls_embeddings)
 
         # Step 4: Scale preds to be in the range of [0, 5]
-        preds = torch.sigmoid(preds) * 5
+        # preds = torch.sigmoid(preds) * 5
 
         return preds
 
