@@ -118,6 +118,9 @@ class MultitaskBERT(nn.Module):
         cls_embeddings = self.dropout_sentiment(cls_embeddings)
         logits = self.linear_sentiment(cls_embeddings)
 
+        # Step 3: Apply a softmax to get the probabilities
+        logits = F.softmax(logits, dim=1)
+
         return logits
 
 
@@ -142,6 +145,9 @@ class MultitaskBERT(nn.Module):
         # Step 3: Get the logits for paraphrase detection
         cls_embeddings = self.dropout_paraphrase(cls_embeddings)
         logits = self.linear_paraphrase(cls_embeddings)
+
+        # Step 4: Apply sigmoid to get the probability
+        logits = torch.sigmoid(logits)
 
         return logits
 
