@@ -270,8 +270,8 @@ class RoundRobinScheduler(Scheduler):
         return super().reset()
 
     def process_one_batch(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict):
-        name = self.order[self.index]
-        self.index = (self.index + 1) % len(self.order)
+        name = self.names[self.index]
+        self.index = (self.index + 1) % len(self.names)
         return name, self.process_named_batch(objects_group, args, name)
 
 
