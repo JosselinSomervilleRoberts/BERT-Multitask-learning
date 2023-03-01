@@ -74,21 +74,43 @@ class MultitaskBERT(nn.Module):
             elif config.option == 'finetune':
                 param.requires_grad = True
         
-        # Step 2: Add a linear layer for sentiment classification
-        # For the baseline:
-        #   - Calls forward() to get the BERT embeddings
-        #   - Applies a dropout layer
-        #   - Applies a linear layer to get the logits
+        # SST: Sentiment classification
+        # This is a multi-class classification task, so the output should be a vector of logit scores.
+        #   - Dropout layer
+        #   - Convolutional layer (1D)      (Bert hidden size -> Bert hidden size)
+        #   - Max pooling layer         
+        #   - ReLU activation
+        #   - Linear layer                  (Bert hidden size -> N sentiment classes)
+        #   - Softmax activation        
         self.dropout_sentiment = nn.Dropout(config.hidden_dropout_prob)
+        self.conv_sentiment = nn.Conv1d(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE, 3, padding=1)
+        self.pool_sentiment = nn.MaxPool1d(2)
         self.linear_sentiment = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)
 
-        # Step 3: Add a linear layer for paraphrase detection
+        # PARAPHRASE: Paraphrase detection
+        # This is a binary classification task, so the output should be a single logit.
+        #   - Dropout layer
+        #   - Convolutional layer (1D)      (Bert hidden size -> Bert hidden size)
+        #   - Max pooling layer
+        #   - ReLU activation
+        #   - Linear layer                  (Bert hidden size -> 1)
+        #   - Sigmoid activation
         self.dropout_paraphrase = nn.Dropout(config.hidden_dropout_prob)
+        self.conv_paraphrase = nn.Conv1d(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE, 3, padding=1)
+        self.pool_paraphrase = nn.MaxPool1d(2)
         self.linear_paraphrase = nn.Linear(BERT_HIDDEN_SIZE, 1)
 
-        # Step 4: Add a linear layer for semantic textual similarity
+        # STS: Semantic Textual Similarity
         # This is a regression task, so the output should be a single number
+        #   - Dropout layer
+        #   - Convolutional layer (1D)      (Bert hidden size -> Bert hidden size)
+        #   - Max pooling layer
+        #   - ReLU activation
+        #   - Linear layer                  (Bert hidden size -> 1)
+        #   - Sigmoid activation            (to scale between 0 and 5)
         self.dropout_similarity = nn.Dropout(config.hidden_dropout_prob)
+        self.conv_similarity = nn.Conv1d(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE, 3, padding=1)
+        self.pool_similarity = nn.MaxPool1d(2)
         self.linear_similarity = nn.Linear(BERT_HIDDEN_SIZE, 1)
 
 
