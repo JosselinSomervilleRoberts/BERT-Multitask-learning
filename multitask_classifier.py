@@ -120,6 +120,9 @@ class MultitaskBERT(nn.Module):
         cls_embeddings = self.dropout_sentiment(cls_embeddings)
         logits = self.linear_sentiment(cls_embeddings)
 
+        # Step 3: Apply a softmax to get the probabilities
+        logits = F.softmax(logits, dim=1)
+
         return logits
 
 
@@ -144,6 +147,9 @@ class MultitaskBERT(nn.Module):
         # Step 3: Get the logits for paraphrase detection
         cls_embeddings = self.dropout_paraphrase(cls_embeddings)
         logits = self.linear_paraphrase(cls_embeddings)
+
+        # Step 4: Apply sigmoid to get the probability
+        logits = torch.sigmoid(logits)
 
         return logits
 
@@ -493,7 +499,7 @@ def train_multitask(args):
 
         # Compute average train loss
         for task in train_loss:
-            train_loss[task] = train_loss[task] / num_batches[task]
+            train_loss[task] = 0 if num_batches[task] == 0 else train_loss[task] / num_batches[task]
 
         # Eval on dev
         # (paraphrase_accuracy, para_y_pred, para_sent_ids,
