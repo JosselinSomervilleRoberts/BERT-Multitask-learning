@@ -491,7 +491,7 @@ def train_multitask(args):
             dev_acc, _, _ = infos[task]['eval_fn'](sst_dev_dataloader, model, device)
             if dev_acc > infos[task]['best_dev_acc']:
                 infos[task]['best_dev_acc'] = dev_acc
-                infos[task]['best_model'] = copy.deepcopy(infos[task]['layer'].state_dict())
+                saved_path = infos[task]['best_model'] = copy.deepcopy(infos[task]['layer'].state_dict())
                 color_score, saved = Colors.PURPLE, True
             
             # Print dev accuracy
@@ -507,7 +507,12 @@ def train_multitask(args):
         infos[task]['layer'].load_state_dict(infos[task]['best_model'])
     
     # Evaluate on dev set
-    # TODO
+    (paraphrase_accuracy, para_y_pred, para_sent_ids,
+        sentiment_accuracy,sst_y_pred, sst_sent_ids,
+        sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
+    print("Paraphrase accuracy: ", paraphrase_accuracy)
+    print("Sentiment accuracy: ", sentiment_accuracy)
+    print("STS correlation: ", sts_corr)
 
     # Save model
     saved_path = save_model(model, optimizer, args, config, args.filepath)
