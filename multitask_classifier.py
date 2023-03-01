@@ -79,17 +79,17 @@ class MultitaskBERT(nn.Module):
         #   - Calls forward() to get the BERT embeddings
         #   - Applies a dropout layer
         #   - Applies a linear layer to get the logits
-        self.dropout_sentiment = nn.Dropout(config.hidden_dropout_prob)
-        self.linear_sentiment = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)
+        self.dropout_sentiment = [nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)]
+        self.linear_sentiment = [nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(config.n_hidden_layers)] + [nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)]
 
         # Step 3: Add a linear layer for paraphrase detection
-        self.dropout_paraphrase = nn.Dropout(config.hidden_dropout_prob)
-        self.linear_paraphrase = nn.Linear(BERT_HIDDEN_SIZE, 1)
+        self.dropout_paraphrase = [nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)]
+        self.linear_paraphrase = [nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(config.n_hidden_layers)] + [nn.Linear(BERT_HIDDEN_SIZE, 1)]
 
         # Step 4: Add a linear layer for semantic textual similarity
         # This is a regression task, so the output should be a single number
-        self.dropout_similarity = nn.Dropout(config.hidden_dropout_prob)
-        self.linear_similarity = nn.Linear(BERT_HIDDEN_SIZE, 1)
+        self.dropout_similarity = [nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)]
+        self.linear_similarity = [nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(config.n_hidden_layers)] + [nn.Linear(BERT_HIDDEN_SIZE, 1)]
 
 
     def forward(self, input_ids, attention_mask):
@@ -114,13 +114,17 @@ class MultitaskBERT(nn.Module):
         Thus, your output should contain 5 logits for each sentence.
         '''
         # Step 1: Get the BERT embeddings
-        cls_embeddings = self.forward(input_ids, attention_mask)
+        x = self.forward(input_ids, attention_mask)
 
-        # Step 2: Get the logits for sentiment classification
-        cls_embeddings = self.dropout_sentiment(cls_embeddings)
-        logits = self.linear_sentiment(cls_embeddings)
+        # Step 2: Hidden layers
+        for i in range(len(self.linear_sentiment) - 1):
+            x = self.dropout_sentiment[i](x)
+            x = self.linear_sentiment[i](x)
+            x = F.relu(x)
 
-        # Step 3: Apply a softmax to get the probabilities
+        # Step 3: Final layer
+        x = self.dropout_sentiment[-1](x)
+        logits = self.linear_sentiment[-1](x)
         logits = F.softmax(logits, dim=1)
 
         return logits
@@ -142,13 +146,17 @@ class MultitaskBERT(nn.Module):
         attention_mask = torch.cat((attention_mask_1, torch.ones_like(batch_sep_token_id), attention_mask_2, torch.ones_like(batch_sep_token_id)), dim=1)
 
         # Step 2: Get the BERT embeddings
-        cls_embeddings = self.forward(input_id, attention_mask)
+        x = self.forward(input_id, attention_mask)
 
-        # Step 3: Get the logits for paraphrase detection
-        cls_embeddings = self.dropout_paraphrase(cls_embeddings)
-        logits = self.linear_paraphrase(cls_embeddings)
+        # Step 3: Hidden layers
+        for i in range(len(self.linear_paraphrase) - 1):
+            x = self.dropout_paraphrase[i](x)
+            x = self.linear_paraphrase[i](x)
+            x = F.relu(x)
 
-        # Step 4: Apply sigmoid to get the probability
+        # Step 4: Final layer
+        x = self.dropout_paraphrase[-1](x)
+        logits = self.linear_paraphrase[-1](x)
         logits = torch.sigmoid(logits)
 
         return logits
@@ -170,14 +178,23 @@ class MultitaskBERT(nn.Module):
         attention_mask = torch.cat((attention_mask_1, torch.ones_like(batch_sep_token_id), attention_mask_2, torch.ones_like(batch_sep_token_id)), dim=1)
 
         # Step 2: Get the BERT embeddings
-        cls_embeddings = self.forward(input_id, attention_mask)
+        x = self.forward(input_id, attention_mask)
 
-        # Step 3: Get the logits for paraphrase detection
-        cls_embeddings = self.dropout_similarity(cls_embeddings)
-        preds = self.linear_similarity(cls_embeddings)
+        # Step 3: Hidden layers
+        for i in range(len(self.linear_similarity) - 1):
+            x = self.dropout_similarity[i](x)
+            x = self.linear_similarity[i](x)
+            x = F.relu(x)
 
-        # Step 4: Scale preds to be in the range of [0, 5]
-        preds = torch.sigmoid(preds) * 5
+        # Step 4: Final layer
+        x = self.dropout_similarity[-1](x)
+        preds = self.linear_similarity[-1](x)
+        preds = torch.sigmoid(preds) * 6 - 0.5 # Scale to [-0.5, 5.5]
+
+        # If we are evaluating, then we cap the predictions to the range [0, 5]
+        if not self.training:
+            print("Capping predictions to [0, 5] range")
+            preds = torch.clamp(preds, 0, 5)
 
         return preds
 
@@ -435,7 +452,8 @@ def train_multitask(args):
               'hidden_size': 768,
               'data_dir': '.',
               'option': args.option,
-              'pretrained_model_name': args.pretrained_model_name}
+              'pretrained_model_name': args.pretrained_model_name,
+              'n_hidden_layers': args.n_hidden_layers}
 
     config = SimpleNamespace(**config)
 
@@ -616,7 +634,8 @@ def get_args():
     parser.add_argument("--sts_test_out", type=str, default="predictions/sts-test-output.csv")
     # hyper parameters
     parser.add_argument("--batch_size", help='This is the simulated batch size using gradient accumulations', type=int, default=256)
-    parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
+    parser.add_argument("--hidden_dropout_prob", type=float, default=0.2)
+    parser.add_argument("--n_hidden_layers", type=int, default=2, help="Number of hidden layers for the classifier")
     parser.add_argument("--lr", type=float, help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
                         default=1e-5)
     parser.add_argument("--num_batches_per_epoch", type=int, default=-1)
@@ -646,7 +665,7 @@ def get_args():
     print_subset_of_args(args, "DATASETS", ["sst_train", "sst_dev", "sst_test", "para_train", "para_dev", "para_test", "sts_train", "sts_dev", "sts_test"], color = Colors.BLUE, print_length = print_length, var_length = 20)
     print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = print_length, var_length = 20)
     print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = print_length, var_length = 25)
-    print_subset_of_args(args, "HYPERPARAMETERS", ["batch_size", "epochs", "num_batches_per_epoch", "lr", "hidden_dropout_prob", "seed"], color = Colors.GREEN, print_length = print_length, var_length = 30)
+    print_subset_of_args(args, "HYPERPARAMETERS", ["n_hidden_layers", "batch_size", "epochs", "num_batches_per_epoch", "lr", "hidden_dropout_prob", "seed"], color = Colors.GREEN, print_length = print_length, var_length = 30)
     print_subset_of_args(args, "OPTIMIZATIONS", ["projection", "task_scheduler", "beta_vaccine", "use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts"], color = Colors.YELLOW, print_length = print_length, var_length = 35)
     print("")
 
