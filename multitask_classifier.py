@@ -491,7 +491,7 @@ def train_multitask(args):
             dev_acc, _, _ = infos[task]['eval_fn'](sst_dev_dataloader, model, device)
             if dev_acc > infos[task]['best_dev_acc']:
                 infos[task]['best_dev_acc'] = dev_acc
-                nfos[task]['best_model'] = copy.deepcopy(infos[task]['layer'].state_dict())
+                infos[task]['best_model'] = copy.deepcopy(infos[task]['layer'].state_dict())
                 color_score, saved = Colors.PURPLE, True
             
             # Print dev accuracy
