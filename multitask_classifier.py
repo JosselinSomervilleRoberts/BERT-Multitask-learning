@@ -14,6 +14,8 @@ from contextlib import nullcontext
 from tqdm import tqdm
 from itertools import cycle
 from pcgrad import PCGrad
+from pcgrad_amp import PCGradAMP
+from gradvac_amp import GradVacAMP
 import gc
 
 from datasets import SentenceClassificationDataset, SentencePairDataset, \
@@ -305,7 +307,7 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss_value = loss.item()
         objects_group.loss_sum += loss_value
         
-        if args.use_amp: loss = scaler.scale(loss)
+        if args.use_amp and not args.use_pcgrad: loss = scaler.scale(loss)
         if not args.use_pcgrad: loss.backward()
         return loss
 
@@ -323,7 +325,7 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss_value = loss.item()
         objects_group.loss_sum += loss_value
         
-        if args.use_amp: loss = scaler.scale(loss)
+        if args.use_amp and not args.use_pcgrad: loss = scaler.scale(loss)
         if not args.use_pcgrad: loss.backward()
         return loss
 
@@ -341,7 +343,7 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss_value = loss.item()
         objects_group.loss_sum += loss_value
         
-        if args.use_amp: loss = scaler.scale(loss)
+        if args.use_amp and not args.use_pcgrad: loss = scaler.scale(loss)
         if not args.use_pcgrad: loss.backward()
         return loss
 
@@ -435,8 +437,9 @@ def train_multitask(args):
 
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
-    optimizer = PCGrad(optimizer)
-    scaler = GradScaler()
+    scaler = None if not args.use_amp else GradScaler()
+    if args.use_pcgrad:
+        optimizer = PCGrad(optimizer) if not args.use_amp else PCGradAMP(num_tasks=3, optimizer=optimizer, scaler=scaler)
     best_dev_acc = 0
 
     # Package objects
@@ -623,8 +626,8 @@ def get_args():
     if args.use_amp and not args.use_gpu:
         raise ValueError("Mixed precision training is only supported on GPU")
 
-    if args.use_pcgrad and args.use_amp:
-        raise ValueError("PCGrad and AMP are not compatible")
+    # if args.use_pcgrad and args.use_amp:
+    #     raise ValueError("PCGrad and AMP are not compatible")
 
     if args.use_pcgrad:
         # Prints warning that PCGrad does not use task scheduler
