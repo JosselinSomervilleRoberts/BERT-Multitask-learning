@@ -438,6 +438,8 @@ def train_multitask(args):
     optimizer = PCGrad(optimizer)
     scaler = GradScaler()
     best_dev_acc = 0
+    best_dev_accuracies = {'sst': 0, 'para': 0, 'sts': 0}
+    best_dev_rel_improv = 0
 
     # Package objects
     objects_group = ObjectsGroup(model, optimizer, scaler)
@@ -493,16 +495,24 @@ def train_multitask(args):
         # Useful for deg
         # paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
 
-        # Coputes relative improvement compare to a random baseline
-        para_rel_improvement = (paraphrase_accuracy - 0.5) / 0.5
-        sst_rel_improvement = (sentiment_accuracy - 1./N_SENTIMENT_CLASSES) / (1 - 1./N_SENTIMENT_CLASSES)
-        sts_rel_improvement = sts_corr
+        # Computes relative improvement compared to a random baseline and to the best model so far
+        # So 0, corresponds to a random baseline and 1 to the best model so far
+        random_accuracies = {'sst': 1./N_SENTIMENT_CLASSES, 'para': 0.5, 'sts': 0.}
+        best_accuracies_so_far = {'sst': 0.598, 'para': 0.924, 'sts': 0.929} # source: https://paperswithcode.com
+        para_rel_improvement = (paraphrase_accuracy - random_accuracies['para']) / (best_accuracies_so_far['para'] - random_accuracies['para'])
+        sst_rel_improvement = (sentiment_accuracy - random_accuracies['sst']) / (best_accuracies_so_far['sst'] - random_accuracies['sst'])
+        sts_rel_improvement = (sts_corr - random_accuracies['sts']) / (best_accuracies_so_far['sts'] - random_accuracies['sts'])
         geom_mean_rel_improvement = (para_rel_improvement * sst_rel_improvement * sts_rel_improvement) ** (1/3)
+
+        # Computes arithmetic average of the accuracies (used for the leaderboard)
+        arithmetic_mean_acc = (paraphrase_accuracy + sentiment_accuracy + sts_corr) / 3
 
         # Saves model if it is the best one so far on the dev set
         color_score, saved = Colors.BLUE, False
-        if geom_mean_rel_improvement > best_dev_acc:
-            best_dev_acc = geom_mean_rel_improvement
+        if arithmetic_mean_acc > best_dev_acc:
+            best_dev_acc = arithmetic_mean_acc
+            best_dev_rel_improv = geom_mean_rel_improvement
+            best_dev_accuracies = {'sst': sentiment_accuracy, 'para': paraphrase_accuracy, 'sts': sts_corr}
             saved_path = save_model(model, optimizer, args, config, args.filepath)
             color_score, saved = Colors.PURPLE, True
 
@@ -511,16 +521,21 @@ def train_multitask(args):
         print(Colors.BOLD + f'{"Num batches SST: ":<20}'   + Colors.END + f"{num_batches['sst']:<5}" + " " * spaces_per_task
             + Colors.BOLD + f'{" Num batches Para: ":<20}' + Colors.END + f"{num_batches['para']:<5}" + " " * spaces_per_task
             + Colors.BOLD + f'{" Num batches STS: ":<20}'  + Colors.END + f"{num_batches['sts']:<5}")
-        print(Colors.BOLD + f'{"Train loss SST: ":<20}'   + Colors.END + f"{train_loss['sst']:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + f'{" Train loss Para: ":<20}' + Colors.END + f"{train_loss['para']:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + f'{" Train loss STS: ":<20}'  + Colors.END + f"{train_loss['sts']:.3f}")
-        print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'   + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}' + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'  + Colors.END + Colors.CYAN + f"{sts_corr:.3f}")
+        print(Colors.BOLD + f'{"Train loss SST: ":<20}'   + Colors.END  + f"{train_loss['sst']:.3f}" + " " * spaces_per_task
+            + Colors.BOLD + f'{" Train loss Para: ":<20}' + Colors.END  + f"{train_loss['para']:.3f}" + " " * spaces_per_task
+            + Colors.BOLD + f'{" Train loss STS: ":<20}'  + Colors.END  + f"{train_loss['sts']:.3f}")
+        print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'    + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.3f}" + " " * spaces_per_task
+            + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}'  + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.3f}" + " " * spaces_per_task
+            + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'   + Colors.END + Colors.CYAN + f"{sts_corr:.3f}")
+        print(Colors.BOLD + color_score + f'{"Best acc SST: ":<20}'   + Colors.END + color_score + f"{best_dev_accuracies['sst']:.3f}" + " " * spaces_per_task
+            + Colors.BOLD + color_score + f'{" Best acc Para: ":<20}' + Colors.END + color_score + f"{best_dev_accuracies['para']:.3f}" + " " * spaces_per_task
+            + Colors.BOLD + color_score + f'{" Best acc STS: ":<20}'  + Colors.END + color_score + f"{best_dev_accuracies['sts']:.3f}")
         end_print = f'{"Saved to: " + saved_path:>{25 + spaces_per_task}}' if saved else ""
-        print(Colors.BOLD + color_score + f'{"Rel improv dev: ":<20}'  + Colors.END + color_score + f"{geom_mean_rel_improvement:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + color_score + f'{" Best rel improv: ":<20}' + Colors.END + color_score + f"{best_dev_acc:.3f}"
+        print(Colors.BOLD + color_score + f'{"Mean acc dev: ":<20}'   + Colors.END + color_score + f"{arithmetic_mean_acc:.3f}" + " " * spaces_per_task
+            + Colors.BOLD + color_score + f'{" Best mean acc: ":<20}' + Colors.END + color_score + f"{best_dev_acc:.3f}"
             + end_print + Colors.END)
+        print(Colors.BOLD + f'{"Rel improv dev: ":<20}'   + Colors.END + f"{geom_mean_rel_improvement:.3f}" + " " * spaces_per_task
+            + Colors.BOLD + f'{" Best rel improv: ":<20}' + Colors.END + f"{best_dev_rel_improv:.3f}")
         print("-" * terminal_width)
         print("")
 
