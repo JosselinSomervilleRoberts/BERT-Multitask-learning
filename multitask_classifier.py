@@ -119,7 +119,7 @@ class MultitaskBERT(nn.Module):
         logits = self.linear_sentiment(cls_embeddings)
 
         # Step 3: Apply a softmax to get the probabilities
-        #logits = F.softmax(logits, dim=1)
+        logits = F.softmax(logits, dim=1)
 
         return logits
 
@@ -147,7 +147,7 @@ class MultitaskBERT(nn.Module):
         logits = self.linear_paraphrase(cls_embeddings)
 
         # Step 4: Apply sigmoid to get the probability
-        #logits = torch.sigmoid(logits)
+        logits = torch.sigmoid(logits)
 
         return logits
 
@@ -497,7 +497,7 @@ def train_multitask(args):
         sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
         
         # Useful for deg
-        paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
+        # paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
 
         # Coputes relative improvement compare to a random baseline
         para_rel_improvement = (paraphrase_accuracy - 0.5) / 0.5
