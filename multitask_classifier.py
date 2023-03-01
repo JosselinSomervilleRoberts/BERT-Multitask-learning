@@ -307,8 +307,9 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss_value = loss.item()
         objects_group.loss_sum += loss_value
         
-        if args.use_amp and not args.use_pcgrad: loss = scaler.scale(loss)
-        if not args.use_pcgrad: loss.backward()
+        if args.projection == "none":
+            if args.use_amp: scaler.scale(loss).backward()
+            else: loss.backward()
         return loss
 
 
@@ -325,8 +326,9 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss_value = loss.item()
         objects_group.loss_sum += loss_value
         
-        if args.use_amp and not args.use_pcgrad: loss = scaler.scale(loss)
-        if not args.use_pcgrad: loss.backward()
+        if args.projection == "none":
+            if args.use_amp: scaler.scale(loss).backward()
+            else: loss.backward()
         return loss
 
 
@@ -343,8 +345,9 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss_value = loss.item()
         objects_group.loss_sum += loss_value
         
-        if args.use_amp and not args.use_pcgrad: loss = scaler.scale(loss)
-        if not args.use_pcgrad: loss.backward()
+        if args.projection == "none":
+            if args.use_amp: scaler.scale(loss).backward()
+            else: loss.backward()
         return loss
 
 def step_optimizer(objects_group: ObjectsGroup, args: dict, step: int, total_nb_batches = None):
@@ -438,8 +441,10 @@ def train_multitask(args):
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
     scaler = None if not args.use_amp else GradScaler()
-    if args.use_pcgrad:
+    if args.projection == 'pcgrad':
         optimizer = PCGrad(optimizer) if not args.use_amp else PCGradAMP(num_tasks=3, optimizer=optimizer, scaler=scaler)
+    elif args.projection == 'vaccine':
+        optimizer = GradVacAMP(num_tasks=3, optimizer=optimizer, scaler=scaler, DEVICE=device, beta=args.beta_vaccine)
     best_dev_acc = 0
     best_dev_accuracies = {'sst': 0, 'para': 0, 'sts': 0}
     best_dev_rel_improv = 0
@@ -471,11 +476,11 @@ def train_multitask(args):
         train_loss = {'sst': 0, 'para': 0, 'sts': 0}
         num_batches = {'sst': 0, 'para': 0, 'sts': 0}
 
-        if args.use_pcgrad:
+        if args.projection != "none":
             for i in tqdm(range(int(num_batches_per_epoch / 3)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
                 losses = []
                 for name in ['sst', 'sts', 'para']:
-                    losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=(not args.use_pcgrad)))
+                    losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=False))
                     train_loss[name] += losses[-1].item()
                     num_batches[name] += 1
                 optimizer.backward(losses)
@@ -491,12 +496,12 @@ def train_multitask(args):
             train_loss[task] = train_loss[task] / num_batches[task]
 
         # Eval on dev
-        (paraphrase_accuracy, para_y_pred, para_sent_ids,
-        sentiment_accuracy,sst_y_pred, sst_sent_ids,
-        sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
+        # (paraphrase_accuracy, para_y_pred, para_sent_ids,
+        # sentiment_accuracy,sst_y_pred, sst_sent_ids,
+        # sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
         
         # Useful for deg
-        # paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
+        paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
 
         # Computes relative improvement compared to a random baseline and to the best model so far
         # So 0, corresponds to a random baseline and 1 to the best model so far
@@ -616,7 +621,8 @@ def get_args():
     parser.add_argument("--max_batch_size_sst", type=int, default=64)
     parser.add_argument("--max_batch_size_para", type=int, default=16)
     parser.add_argument("--max_batch_size_sts", type=int, default=32)
-    parser.add_argument("--use_pcgrad", action='store_true')
+    parser.add_argument("--projection", type=str, choices=('none', 'pcgrad', 'vaccine'), default="none")
+    parser.add_argument("--beta_vaccine", type=float, default=1e-2)
 
     args = parser.parse_args()
 
@@ -635,18 +641,18 @@ def get_args():
     print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = print_length, var_length = 20)
     print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = print_length, var_length = 25)
     print_subset_of_args(args, "HYPERPARAMETERS", ["batch_size", "epochs", "num_batches_per_epoch", "lr", "hidden_dropout_prob", "seed"], color = Colors.GREEN, print_length = print_length, var_length = 30)
-    print_subset_of_args(args, "OPTIMIZATIONS", ["use_amp", "use_gpu", "use_pcgrad", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts"], color = Colors.YELLOW, print_length = print_length, var_length = 35)
+    print_subset_of_args(args, "OPTIMIZATIONS", ["projection", "task_scheduler", "beta_vaccine", "use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts"], color = Colors.YELLOW, print_length = print_length, var_length = 35)
     print("")
 
     if args.use_amp and not args.use_gpu:
         raise ValueError("Mixed precision training is only supported on GPU")
 
-    # if args.use_pcgrad and args.use_amp:
-    #     raise ValueError("PCGrad and AMP are not compatible")
+    if args.projection != "vaccine" and args.beta_vaccine != 1e-2:
+        print(Colors.RED + "Beta for Vaccine is only used when Vaccine is used" + Colors.END)
 
-    if args.use_pcgrad:
+    if args.projection != "none" and args.task_scheduler != "round_robin":
         # Prints warning that PCGrad does not use task scheduler
-        print(Colors.RED + "WARNING: PCGrad does not use task scheduler" + Colors.END)
+        print(Colors.RED + "WARNING: PCGrad & Vaccine do not use task scheduler" + Colors.END)
 
     return args
 
