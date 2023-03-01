@@ -697,8 +697,8 @@ def get_args():
     # Optimizations
     parser.add_argument("--use_amp", action='store_true')
     parser.add_argument("--max_batch_size_sst", type=int, default=64)
-    parser.add_argument("--max_batch_size_para", type=int, default=16)
-    parser.add_argument("--max_batch_size_sts", type=int, default=32)
+    parser.add_argument("--max_batch_size_para", type=int, default=32)
+    parser.add_argument("--max_batch_size_sts", type=int, default=64)
     parser.add_argument("--projection", type=str, choices=('none', 'pcgrad', 'vaccine'), default="none")
     parser.add_argument("--beta_vaccine", type=float, default=1e-2)
     parser.add_argument("--patience", type=int, help="Number maximum of epochs without improvement", default=5)
