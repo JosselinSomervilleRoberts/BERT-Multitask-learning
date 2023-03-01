@@ -118,7 +118,7 @@ class MultitaskBERT(nn.Module):
         logits = self.linear_sentiment(cls_embeddings)
 
         # Step 3: Apply a softmax to get the probabilities
-        logits = F.softmax(logits, dim=1)
+        # logits = F.softmax(logits, dim=1)
 
         return logits
 
