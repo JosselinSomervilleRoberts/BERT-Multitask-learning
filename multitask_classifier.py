@@ -461,6 +461,10 @@ def train_multitask(args):
     if args.pretrained_model_name != "none":
         config = load_model(model, args.pretrained_model_name)
     model = model.to(device)
+    layers_list = [model.dropout_sentiment, model.dropout_paraphrase, model.dropout_similarity, model.linear_sentiment, model.linear_paraphrase, model.linear_similarity]
+    for i in range(args.n_hidden_layers):
+        for layer in layers_list:
+            layer[i] = layer[i].to(device)
 
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
