@@ -70,16 +70,12 @@ class MultitaskBERT(nn.Module):
         self.bert = BertModel.from_pretrained("bert-base-uncased")
         self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
         for param in self.bert.parameters():
-            if config.option == 'pretrain':
-                param.requires_grad = False
-            elif config.option == 'finetune':
+            if config.option == 'finetune':
                 param.requires_grad = True
+            else:
+                param.requires_grad = False
         
         # Step 2: Add a linear layer for sentiment classification
-        # For the baseline:
-        #   - Calls forward() to get the BERT embeddings
-        #   - Applies a dropout layer
-        #   - Applies a linear layer to get the logits
         self.dropout_sentiment = nn.Dropout(config.hidden_dropout_prob)
         self.linear_sentiment = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)
 
@@ -468,14 +464,14 @@ def train_multitask(args):
 
 
 
-    # ==================== THIS IS PRETRAINING ====================
+    # ==================== THIS IS INDIVIDUAL PRETRAINING ====================
 
     # Since we are pretraining, we are only updating the layers on top off BERT
     # This means that the tasks are not dependent on each other
     # We can therefore train them in parallel ans save the best state for each task
     # At the end, we load the best state for each task and evaluate the model on the dev set (multitask)
 
-    if args.option == 'pretrain':
+    if args.option == 'individual_pretrain':
         # Dict to train each task separately
         infos = {'sst': {'num_batches': len(sst_train_dataloader), 'eval_fn': model_eval_sentiment, 'dev_dataloader': sst_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_sentiment},
                 'para': {'num_batches': len(para_train_dataloader), 'eval_fn': model_eval_paraphrase, 'dev_dataloader': para_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_paraphrase},
@@ -485,7 +481,7 @@ def train_multitask(args):
             optimizer = AdamW(model.parameters(), lr=lr)
             terminal_width = os.get_terminal_size().columns
             last_improv = -1
-            print(Colors.BOLD + f'{"     Pretraining " + task + "     ":-^{os.get_terminal_size().columns}}' + Colors.END)
+            print(Colors.BOLD + f'{"     Individually Pretraining " + task + "     ":-^{os.get_terminal_size().columns}}' + Colors.END)
             for epoch in range(args.epochs):
                 for i in tqdm(range(infos[task]['num_batches']), desc=task + ' epoch ' + str(epoch), disable=TQDM_DISABLE, smoothing=0):
                     loss = scheduler.process_named_batch(name=task, objects_group=objects_group, args=args)
@@ -678,7 +674,7 @@ def get_args():
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--option", type=str,
                         help='pretrain: the BERT parameters are frozen; finetune: BERT parameters are updated',
-                        choices=('pretrain', 'finetune', 'test'), default="pretrain")
+                        choices=('pretrain', 'finetune', 'test', 'individual_pretrain'), default="pretrain")
     parser.add_argument("--pretrained_model_name", type=str, default="none")
     parser.add_argument("--use_gpu", action='store_true')
 
@@ -762,8 +758,8 @@ def get_args():
         if args.use_amp:
             warn("Testing mode does not train the model, so use_amp is not used")
 
-    # If we are not in finetuning mode, a lot of options are not available
-    elif args.option == "pretrain":
+    # If we are individually pretraining, a lot of options are not available
+    elif args.option == "individual_pretrain":
         if args.pretrained_model_name != "none":
             warn("Pretraining mode should not be used with an already pretrained model", color=Colors.YELLOW)
         if args.task_scheduler != "round_robin":
@@ -775,7 +771,7 @@ def get_args():
         if args.beta_vaccine != 1e-2:
             warn("Pretraining mode does not support beta_vaccine (Each task is trained separately)")
         
-    # If we are in finetuning mode
+    # If we are in finetuning mode or multitask pretraining
     else:
         if args.projection != "vaccine" and args.beta_vaccine != 1e-2:
             warn("Beta for Vaccine is only used when Vaccine is used")
@@ -791,4 +787,4 @@ if __name__ == "__main__":
     args.filepath = f'{args.option}-{args.epochs}-{args.lr}-multitask.pt' # save path
     seed_everything(args.seed)  # fix the seed for reproducibility
     if args.option != "test": train_multitask(args)
-    if args.option != "pretrain": test_model(args)
+    if args.option != "pretrain" and args.option != 'individual_pretrain': test_model(args)
