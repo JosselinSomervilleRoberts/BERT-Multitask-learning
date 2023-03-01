@@ -149,9 +149,6 @@ class MultitaskBERT(nn.Module):
         cls_embeddings = self.dropout_paraphrase(cls_embeddings)
         logits = self.linear_paraphrase(cls_embeddings)
 
-        # Step 4: Apply sigmoid to get the probability
-        # logits = torch.sigmoid(logits)
-
         return logits
 
 
@@ -470,23 +467,27 @@ def train_multitask(args):
         scheduler = RandomScheduler(dataloaders)
 
 
-    if args.option == 'pretrain':
-        # Since we are pretraining, we are only updating the layers on top off BERT
-        # This means that the tasks are not dependent on each other
-        # We can therefore train them in parallel ans save the best state for each task
-        # At the end, we load the best state for each task and evaluate the model on the dev set (multitask)
 
+    # ==================== THIS IS PRETRAINING ====================
+
+    # Since we are pretraining, we are only updating the layers on top off BERT
+    # This means that the tasks are not dependent on each other
+    # We can therefore train them in parallel ans save the best state for each task
+    # At the end, we load the best state for each task and evaluate the model on the dev set (multitask)
+
+    if args.option == 'pretrain':
         # Dict to train each task separately
-        infos = {'sst': {'eval_fn': model_eval_sentiment, 'dev_dataloader': sst_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_sentiment},
-                'para': {'eval_fn': model_eval_paraphrase, 'dev_dataloader': para_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_paraphrase},
-                'sts': {'eval_fn': model_eval_sts, 'dev_dataloader': sts_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_similarity}}
+        infos = {'sst': {'num_batches': len(sst_train_dataloader), 'eval_fn': model_eval_sentiment, 'dev_dataloader': sst_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_sentiment},
+                'para': {'num_batches': len(para_train_dataloader), 'eval_fn': model_eval_paraphrase, 'dev_dataloader': para_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_paraphrase},
+                'sts':  {'num_batches': len(sts_train_dataloader), 'eval_fn': model_eval_sts, 'dev_dataloader': sts_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_similarity}}
         
         for task in ['para', 'sst', 'sts']:
             optimizer = AdamW(model.parameters(), lr=lr)
             terminal_width = os.get_terminal_size().columns
+            last_improv = -1
             print(Colors.BOLD + f'{"     Pretraining " + task + "     ":-^{os.get_terminal_size().columns}}' + Colors.END)
             for epoch in range(args.epochs):
-                for i in tqdm(range(len(sst_train_dataloader)), desc=task + ' epoch ' + str(epoch), disable=TQDM_DISABLE, smoothing=0):
+                for i in tqdm(range(infos[task]['num_batches']), desc=task + ' epoch ' + str(epoch), disable=TQDM_DISABLE, smoothing=0):
                     loss = scheduler.process_named_batch(name=task, objects_group=objects_group, args=args)
                 
                 # Evaluate on dev set
@@ -496,6 +497,7 @@ def train_multitask(args):
                     infos[task]['best_dev_acc'] = dev_acc
                     infos[task]['best_model'] = copy.deepcopy(infos[task]['layer'].state_dict())
                     color_score, saved = Colors.PURPLE, True
+                    last_improv = epoch
                 
                 # Print dev accuracy
                 spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
@@ -503,7 +505,9 @@ def train_multitask(args):
                 print(Colors.BOLD + color_score + f'{"Cur acc dev: ":<20}'   + Colors.END + color_score + f"{dev_acc:.3f}" + " " * spaces_per_task
                     + Colors.BOLD + color_score + f'{" Best acc dev: ":<20}' + Colors.END + color_score + f"{infos[task]['best_dev_acc']:.3f}"
                     + end_print + Colors.END)
+
                 if epoch != args.epochs - 1: print("")
+                elif epoch - last_improv >= args.patience: break
             print("-" * terminal_width)
             print('\n\n')
 
@@ -529,21 +533,20 @@ def train_multitask(args):
 
 
 
-
-
-
-
-    
+    # ====================== THIS IS FINETUNING ======================
 
     # Run for the specified number of epochs
     # Here we don't even specify explicitly to reset the scheduler at the end of each epoch (i.e. reset the dataloaders).
     # This way we make sure that the scheduler goes through the entire dataset before resetting.
     # The num_of_batches is simply defined to be consistent with the size of the datasets.
+
     num_batches_per_epoch = args.num_batches_per_epoch
     if num_batches_per_epoch <= 0:
         num_batches_per_epoch = int(len(sst_train_dataloader) / args.gradient_accumulations_sst) + \
                                 int(len(para_train_dataloader) / args.gradient_accumulations_para) + \
                                 int(len(sts_train_dataloader) / args.gradient_accumulations_sts)
+    
+    last_improv = -1
     for epoch in range(args.epochs):
         print(Colors.BOLD + f'{"     Epoch " + str(epoch) + "     ":-^{os.get_terminal_size().columns}}' + Colors.END)
         model.train()
@@ -621,6 +624,8 @@ def train_multitask(args):
         print("-" * terminal_width)
         print("")
 
+        if epoch - last_improv >= args.patience: break
+
 
 
 def load_model(model, filepath):
@@ -652,6 +657,9 @@ def print_subset_of_args(args, title, list_of_args, color = Colors.BLUE, print_l
         print(Colors.BOLD + f'█ {arg + ": ": >{var_length}}' + Colors.END + f'{getattr(args, arg): <{print_length - var_length - 3}}' +  color  + '█')
     print("█" * print_length + Colors.END)
 
+def warn(message: str, color: str = Colors.RED) -> None:
+    print(color + "WARNING: " + message + Colors.END)
+
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sst_train", type=str, default="data/ids-sst-train.csv")
@@ -670,7 +678,7 @@ def get_args():
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--option", type=str,
                         help='pretrain: the BERT parameters are frozen; finetune: BERT parameters are updated',
-                        choices=('pretrain', 'finetune'), default="pretrain")
+                        choices=('pretrain', 'finetune', 'test'), default="pretrain")
     parser.add_argument("--pretrained_model_name", type=str, default="none")
     parser.add_argument("--use_gpu", action='store_true')
 
@@ -697,6 +705,7 @@ def get_args():
     parser.add_argument("--max_batch_size_sts", type=int, default=32)
     parser.add_argument("--projection", type=str, choices=('none', 'pcgrad', 'vaccine'), default="none")
     parser.add_argument("--beta_vaccine", type=float, default=1e-2)
+    parser.add_argument("--patience", type=int, help="Number maximum of epochs without improvement", default=5)
 
     args = parser.parse_args()
 
@@ -714,25 +723,72 @@ def get_args():
     print_subset_of_args(args, "DATASETS", ["sst_train", "sst_dev", "sst_test", "para_train", "para_dev", "para_test", "sts_train", "sts_dev", "sts_test"], color = Colors.BLUE, print_length = print_length, var_length = 20)
     print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = print_length, var_length = 20)
     print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = print_length, var_length = 25)
-    print_subset_of_args(args, "HYPERPARAMETERS", ["batch_size", "epochs", "num_batches_per_epoch", "lr", "hidden_dropout_prob", "seed"], color = Colors.GREEN, print_length = print_length, var_length = 30)
-    print_subset_of_args(args, "OPTIMIZATIONS", ["projection", "task_scheduler", "beta_vaccine", "use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts"], color = Colors.YELLOW, print_length = print_length, var_length = 35)
+    
+    hyperparameters = ["batch_size", "epochs", "lr", "hidden_dropout_prob", "seed"]
+    if args.option == "finetune": hyperparameters += ["num_batches_per_epoch"]
+    print_subset_of_args(args, "HYPERPARAMETERS", hyperparameters, color = Colors.GREEN, print_length = print_length, var_length = 30)
+    
+    optim_args = ["use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts", "patience"]
+    if args.option == "finetune":
+        optin_args += ["task_scheduler", "projection"]
+        if args.projection == "vaccine":
+            optim_args += ["beta_vaccine"]
+    print_subset_of_args(args, "OPTIMIZATIONS", optim_args, color = Colors.YELLOW, print_length = print_length, var_length = 35)
     print("")
 
     if args.use_amp and not args.use_gpu:
         raise ValueError("Mixed precision training is only supported on GPU")
 
-    if args.projection != "vaccine" and args.beta_vaccine != 1e-2:
-        print(Colors.RED + "Beta for Vaccine is only used when Vaccine is used" + Colors.END)
+    # If we are in testing mode, we do not need to train the model
+    if args.option == "test":
+        if args.pretrained_model_name == "none":
+            raise ValueError("Testing mode requires a pretrained model")
+        if args.lr != 1e-5:
+            warn("Testing mode does not train the model, so the learning rate is not used")
+        if args.epochs != 1:
+            warn("Testing mode does not train the model, so the number of epochs is not used")
+        if args.num_batches_per_epoch != -1:
+            warn("Testing mode does not train the model, so num_batches_per_epoch is not used")
+        if args.task_scheduler != "round_robin":
+            warn("Testing mode does not train the model, so task_scheduler is not used")
+        if args.projection != "none":
+            warn("Testing mode does not train the model, so projection is not used")
+        if args.hidden_dropout_prob != 0.3:
+            warn("Testing mode does not train the model, so hidden_dropout_prob is not used")
+        if args.beta_vaccine != 1e-2:
+            warn("Testing mode does not train the model, so beta_vaccine is not used")
+        if args.patience != 5:
+            warn("Testing mode does not train the model, so patience is not used")
+        if args.use_amp:
+            warn("Testing mode does not train the model, so use_amp is not used")
 
-    if args.projection != "none" and args.task_scheduler != "round_robin":
-        # Prints warning that PCGrad does not use task scheduler
-        print(Colors.RED + "WARNING: PCGrad & Vaccine do not use task scheduler" + Colors.END)
+    # If we are not in finetuning mode, a lot of options are not available
+    elif args.option == "pretrain":
+        if args.pretrained_model_name != "none":
+            warn("Pretraining mode should not be used with an already pretrained model", color=Colors.YELLOW)
+        if args.task_scheduler != "round_robin":
+            warn("Pretraining mode does not support task scheduler (Each task is trained separately)")
+        if args.projection != "none":
+            warn("Pretraining mode does not support projection (Each task is trained separately)")
+        if args.num_batches_per_epoch != -1:
+            warn("Pretraining mode does not support num_batches_per_epoch (One peoch is a full pass through the dataset)")
+        if args.beta_vaccine != 1e-2:
+            warn("Pretraining mode does not support beta_vaccine (Each task is trained separately)")
+        
+    # If we are in finetuning mode
+    else:
+        if args.projection != "vaccine" and args.beta_vaccine != 1e-2:
+            warn("Beta for Vaccine is only used when Vaccine is used")
+        if args.projection != "none" and args.task_scheduler != "round_robin":
+            warn("PCGrad & Vaccine do not use task scheduler")
 
     return args
+
+
 
 if __name__ == "__main__":
     args = get_args()
     args.filepath = f'{args.option}-{args.epochs}-{args.lr}-multitask.pt' # save path
     seed_everything(args.seed)  # fix the seed for reproducibility
-    train_multitask(args)
-    test_model(args)
+    if args.option != "test": train_multitask(args)
+    if args.option != "pretrain": test_model(args)
