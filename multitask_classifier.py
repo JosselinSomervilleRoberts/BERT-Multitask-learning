@@ -16,12 +16,13 @@ from itertools import cycle
 from pcgrad import PCGrad
 from pcgrad_amp import PCGradAMP
 from gradvac_amp import GradVacAMP
-import gc
+import copy
 
 from datasets import SentenceClassificationDataset, SentencePairDataset, \
     load_multitask_data, load_multitask_test_data
 
-from evaluation import model_eval_multitask, test_model_multitask
+from evaluation import model_eval_multitask, test_model_multitask, \
+    model_eval_paraphrase, model_eval_sts, model_eval_sentiment
 
 
 TQDM_DISABLE = False
@@ -447,6 +448,7 @@ def train_multitask(args):
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
     scaler = None if not args.use_amp else GradScaler()
+
     if args.projection == 'pcgrad':
         optimizer = PCGrad(optimizer) if not args.use_amp else PCGradAMP(num_tasks=3, optimizer=optimizer, scaler=scaler)
     elif args.projection == 'vaccine':
@@ -466,6 +468,57 @@ def train_multitask(args):
         scheduler = PalScheduler(dataloaders)
     elif args.task_scheduler == 'random':
         scheduler = RandomScheduler(dataloaders)
+
+
+    # Since we are pretraining, we are only updating the layers on top off BERT
+    # This means that the tasks are not dependent on each other
+    # We can therefore train them in parallel ans save the best state for each task
+    # At the end, we load the best state for each task and evaluate the model on the dev set (multitask)
+
+    # Dict to train each task separately
+    infos = {'sst': {'eval_fn': model_eval_sentiment, 'dev_dataloader': sst_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_sentiment},
+             'para': {'eval_fn': model_eval_paraphrase, 'dev_dataloader': para_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_paraphrase},
+             'sts': {'eval_fn': model_eval_sts, 'dev_dataloader': sts_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_similarity}}
+    
+    for task in infos.keys():
+        optimizer = AdamW(model.parameters(), lr=lr)
+        for epoch in range(args.epochs):
+            for i in tqdm(range(len(sst_train_dataloader)), desc=task + ' epoch ' + str(epoch), disable=TQDM_DISABLE, smoothing=0):
+                loss = scheduler.process_named_batch(name=task, objects_group=objects_group, args=args)
+            
+            # Evaluate on dev set
+            color_score, saved = Colors.BLUE, False
+            dev_acc, _, _ = infos[task]['eval_fn'](sst_dev_dataloader, model, device)
+            if dev_acc > infos[task]['best_dev_acc']:
+                infos[task]['best_dev_acc'] = dev_acc
+                infos[task]['best_model'] = copy.deepcopy(infos[task]['layer'].state_dict())
+                color_score, saved = Colors.PURPLE, True
+            
+            # Print dev accuracy
+            terminal_width = os.get_terminal_size().columns
+            spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
+            end_print = f'{"Saved to: " + saved_path:>{25 + spaces_per_task}}' if saved else ""
+            print(Colors.BOLD + color_score + f'{"Cur acc dev: ":<20}'   + Colors.END + color_score + f"{dev_acc:.3f}" + " " * spaces_per_task
+                + Colors.BOLD + color_score + f'{" Best acc dev: ":<20}' + Colors.END + color_score + f"{best_dev_acc:.3f}"
+                + end_print + Colors.END)
+
+    # Load best model for each task
+    for task in infos.keys():
+        infos[task]['layer'].load_state_dict(infos[task]['best_model'])
+    
+    # Evaluate on dev set
+    # TODO
+
+    # Save model
+    saved_path = save_model(model, optimizer, args, config, args.filepath)
+
+
+
+
+
+
+
+    
 
     # Run for the specified number of epochs
     # Here we don't even specify explicitly to reset the scheduler at the end of each epoch (i.e. reset the dataloaders).
@@ -502,12 +555,12 @@ def train_multitask(args):
             train_loss[task] = 0 if num_batches[task] == 0 else train_loss[task] / num_batches[task]
 
         # Eval on dev
-        # (paraphrase_accuracy, para_y_pred, para_sent_ids,
-        # sentiment_accuracy,sst_y_pred, sst_sent_ids,
-        # sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
+        (paraphrase_accuracy, para_y_pred, para_sent_ids,
+        sentiment_accuracy,sst_y_pred, sst_sent_ids,
+        sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
         
         # Useful for deg
-        paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
+        # paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
 
         # Computes relative improvement compared to a random baseline and to the best model so far
         # So 0, corresponds to a random baseline and 1 to the best model so far
