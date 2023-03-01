@@ -186,12 +186,11 @@ class MultitaskBERT(nn.Module):
         # Step 4: Final layer
         x = self.dropout_similarity[-1](x)
         preds = self.linear_similarity[-1](x)
-        preds = torch.sigmoid(preds) * 6 - 0.5 # Scale to [-0.5, 5.5]
+        # preds = torch.sigmoid(preds) * 6 - 0.5 # Scale to [-0.5, 5.5]
 
-        # If we are evaluating, then we cap the predictions to the range [0, 5]
-        if not self.training:
-            print("Capping predictions to [0, 5] range")
-            preds = torch.clamp(preds, 0, 5)
+        # # If we are evaluating, then we cap the predictions to the range [0, 5]
+        # if not self.training:
+        #     preds = torch.clamp(preds, 0, 5)
 
         return preds
 
