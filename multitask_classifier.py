@@ -483,6 +483,9 @@ def train_multitask(args):
         scheduler = RandomScheduler(dataloaders)
 
 
+    # Loss logs
+    train_loss_logs_epochs = {'sst': [], 'para': [], 'sts': []}
+    dev_acc_logs_epochs = {'sst': [], 'para': [], 'sts': []}
 
     # ==================== THIS IS INDIVIDUAL PRETRAINING ====================
 
@@ -589,12 +592,18 @@ def train_multitask(args):
         # Compute average train loss
         for task in train_loss:
             train_loss[task] = 0 if num_batches[task] == 0 else train_loss[task] / num_batches[task]
+            train_loss_logs_epochs[task].append(train_loss[task])
 
         # Eval on dev
         (paraphrase_accuracy, para_y_pred, para_sent_ids,
         sentiment_accuracy,sst_y_pred, sst_sent_ids,
         sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
         
+        #We keep track of the accuracies for each task for each epoch
+        dev_acc_logs_epochs['sst'].append(sentiment_accuracy)
+        dev_acc_logs_epochs['para'].append(paraphrase_accuracy)
+        dev_acc_logs_epochs['sts'].append(sts_corr)
+
         # Useful for deg
         # paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
 
@@ -646,7 +655,20 @@ def train_multitask(args):
         if epoch - last_improv >= args.patience:
             print(Colors.BOLD + Colors.RED + f'{"Early stopping":^{os.get_terminal_size().columns}}' + Colors.END)
             break
-
+    
+    if args.save_loss_logs:
+        # Write train_loss_logs_epochs to file
+        with open('scheduler_analysis/train_loss_logs_epochs.txt', 'w') as f:
+            f.write('{}\n'.format(args.task_scheduler))
+            # Loop through the dictionary items and write them to the file
+            for key, value in train_loss_logs_epochs.items():
+                f.write('{}: {}\n'.format(key, value))
+        #Write dev_acc_logs_epochs to file
+        with open('scheduler_analysis/dev_acc_logs_epochs.txt', 'w') as f:
+            f.write('{}\n'.format(args.task_scheduler))
+            # Loop through the dictionary items and write them to the file
+            for key, value in dev_acc_logs_epochs.items():
+                f.write('{}: {}\n'.format(key, value))
 
 
 def load_model(model, filepath):
@@ -711,6 +733,10 @@ def get_args():
 
     parser.add_argument("--sts_dev_out", type=str, default="predictions/sts-dev-output.csv")
     parser.add_argument("--sts_test_out", type=str, default="predictions/sts-test-output.csv")
+
+    #Arugment to save logs through the epochs (train loss and dev accuracy)
+    parser.add_argument("--save_loss_logs", type=bool, default=False)
+
     # hyper parameters
     parser.add_argument("--batch_size", help='This is the simulated batch size using gradient accumulations', type=int, default=256)
     parser.add_argument("--hidden_dropout_prob", type=float, default=0.2)
