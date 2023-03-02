@@ -496,6 +496,7 @@ def train_multitask(args):
     # At the end, we load the best state for each task and evaluate the model on the dev set (multitask)
 
     if args.option == 'individual_pretrain':
+        saved_path = save_model(model, optimizer, args, config, args.filepath)
         # Dict to train each task separately
         infos = {'sst': {'num_batches': len(sst_train_dataloader), 'eval_fn': model_eval_sentiment, 'dev_dataloader': sst_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_sentiment},
                 'para': {'num_batches': len(para_train_dataloader), 'eval_fn': model_eval_paraphrase, 'dev_dataloader': para_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_paraphrase},
