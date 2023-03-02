@@ -658,13 +658,13 @@ def train_multitask(args):
     
     if args.save_loss_logs:
         # Write train_loss_logs_epochs to file
-        with open('scheduler_analysis/train_loss_logs_epochs.txt', 'w') as f:
+        with open('train_loss_logs_epochs.txt', 'w') as f:
             f.write('{}\n'.format(args.task_scheduler))
             # Loop through the dictionary items and write them to the file
             for key, value in train_loss_logs_epochs.items():
                 f.write('{}: {}\n'.format(key, value))
         #Write dev_acc_logs_epochs to file
-        with open('scheduler_analysis/dev_acc_logs_epochs.txt', 'w') as f:
+        with open('dev_acc_logs_epochs.txt', 'w') as f:
             f.write('{}\n'.format(args.task_scheduler))
             # Loop through the dictionary items and write them to the file
             for key, value in dev_acc_logs_epochs.items():
