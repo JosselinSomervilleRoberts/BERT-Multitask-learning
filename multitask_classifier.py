@@ -502,7 +502,7 @@ def train_multitask(args):
                 'para': {'num_batches': len(para_train_dataloader), 'eval_fn': model_eval_paraphrase, 'dev_dataloader': para_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_paraphrase},
                 'sts':  {'num_batches': len(sts_train_dataloader), 'eval_fn': model_eval_sts, 'dev_dataloader': sts_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_similarity}}
         
-        for task in ['sst', 'sts', 'para']:
+        for task in ['para', 'sst', 'sts']:
             optimizer = AdamW(model.parameters(), lr=lr)
             terminal_width = os.get_terminal_size().columns
             last_improv = -1
