@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from config import BertConfig
 
-from bert import BertModel, BertLayerWithPAL
+from bert import BertModel, BertModelWithPAL
 from tokenizer import BertTokenizer
 from optimizer import AdamW
 from torch.cuda.amp import GradScaler, autocast
@@ -69,6 +69,8 @@ class MultitaskBERT(nn.Module):
         # You will want to add layers here to perform the downstream tasks.
         # Pretrain mode does not require updating bert paramters.
         self.bert = BertModel.from_pretrained("bert-base-uncased")
+        bert_config = BertConfig()
+        BertModelWithPAL.from_BertModel(self.bert, bert_config)
         self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
         for param in self.bert.parameters():
             if config.option == 'finetune':
@@ -90,7 +92,7 @@ class MultitaskBERT(nn.Module):
         self.linear_similarity = nn.ModuleList([nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(config.n_hidden_layers)] + [nn.Linear(BERT_HIDDEN_SIZE, 1)])
 
 
-    def forward(self, input_ids, attention_mask):
+    def forward(self, input_ids, attention_mask, task_id):
         'Takes a batch of sentences and produces embeddings for them.'
         # The final BERT embedding is the hidden state of [CLS] token (the first token)
         # Here, you can start by just returning the embeddings straight from BERT.
@@ -98,7 +100,7 @@ class MultitaskBERT(nn.Module):
         # (e.g., by adding other layers).
         
         # Step 1: Get the BERT embeddings
-        bert_output = self.bert(input_ids, attention_mask)
+        bert_output = self.bert(input_ids, attention_mask, task_id)
 
         # Step 2: Get the [CLS] token embeddings
         cls_embeddings = bert_output['pooler_output']
@@ -112,7 +114,7 @@ class MultitaskBERT(nn.Module):
         Thus, your output should contain 5 logits for each sentence.
         '''
         # Step 1: Get the BERT embeddings
-        x = self.forward(input_ids, attention_mask)
+        x = self.forward(input_ids, attention_mask, task_id=0)
 
         # Step 2: Hidden layers
         for i in range(len(self.linear_sentiment) - 1):
@@ -144,7 +146,7 @@ class MultitaskBERT(nn.Module):
         attention_mask = torch.cat((attention_mask_1, torch.ones_like(batch_sep_token_id), attention_mask_2, torch.ones_like(batch_sep_token_id)), dim=1)
 
         # Step 2: Get the BERT embeddings
-        x = self.forward(input_id, attention_mask)
+        x = self.forward(input_id, attention_mask, task_id=1)
 
         # Step 3: Hidden layers
         for i in range(len(self.linear_paraphrase) - 1):
@@ -176,7 +178,7 @@ class MultitaskBERT(nn.Module):
         attention_mask = torch.cat((attention_mask_1, torch.ones_like(batch_sep_token_id), attention_mask_2, torch.ones_like(batch_sep_token_id)), dim=1)
 
         # Step 2: Get the BERT embeddings
-        x = self.forward(input_id, attention_mask)
+        x = self.forward(input_id, attention_mask, task_id=2)
 
         # Step 3: Hidden layers
         for i in range(len(self.linear_similarity) - 1):
@@ -455,9 +457,6 @@ def train_multitask(args):
     config = SimpleNamespace(**config)
 
     model = MultitaskBERT(config)
-    # Convert BertLayers to BertLayerWithPal
-    bert_config = BertConfig()
-    model.bert.bert_layers = nn.ModuleList([BertLayerWithPAL.from_BertLayer(bert_layer, bert_config) for bert_layer in model.bert.bert_layers])
 
     if args.pretrained_model_name != "none":
         config = load_model(model, args.pretrained_model_name)

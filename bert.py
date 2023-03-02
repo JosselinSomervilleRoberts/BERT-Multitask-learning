@@ -207,7 +207,7 @@ class BertModel(BertPreTrainedModel):
   2. a stack of n bert layers (used in self.encode)
   3. a linear transformation layer for [CLS] token (used in self.forward, as given)
   """
-  def __init__(self, config):
+  def __init__(self, config, bert_layer=BertLayer):
     super().__init__(config)
     self.config = config
 
@@ -222,9 +222,6 @@ class BertModel(BertPreTrainedModel):
     self.register_buffer('position_ids', position_ids)
 
     # bert encoder
-    bert_layer=BertLayer 
-    # if "bert_layer" in config and config.bert_layer == "bert_layer_with_pal":
-    #   bert_layer=BertLayerWithPAL
     self.bert_layers = nn.ModuleList([bert_layer(config) for _ in range(config.num_hidden_layers)])
 
     # for [CLS] token
@@ -289,3 +286,50 @@ class BertModel(BertPreTrainedModel):
     first_tk = self.pooler_af(first_tk)
 
     return {'last_hidden_state': sequence_output, 'pooler_output': first_tk}
+
+
+class BertModelWithPAL(BertModel):
+  def __init__(self, config):
+    super().__init__(config, bert_layer=BertLayerWithPAL)
+
+  def from_BertModel(bert_model, bert_config):
+    bert_model.__class__ = BertModelWithPAL
+    bert_model.bert_layers = nn.ModuleList([BertLayerWithPAL.from_BertLayer(bert_layer, bert_config) for bert_layer in bert_model.bert_layers])
+
+
+  def encode(self, hidden_states, attention_mask, task_id):
+    """
+    hidden_states: the output from the embedding layer [batch_size, seq_len, hidden_size]
+    attention_mask: [batch_size, seq_len]
+    """
+    # get the extended attention mask for self attention
+    # returns extended_attention_mask of [batch_size, 1, 1, seq_len]
+    # non-padding tokens with 0 and padding tokens with a large negative number 
+    extended_attention_mask: torch.Tensor = get_extended_attention_mask(attention_mask, self.dtype)
+
+    # pass the hidden states through the encoder layers
+    for i, layer_module in enumerate(self.bert_layers):
+      # feed the encoding from the last bert_layer to the next
+      hidden_states = layer_module(hidden_states, extended_attention_mask, task_id=task_id)
+
+    return hidden_states
+
+  def forward(self, input_ids, attention_mask, task_id):
+    """
+    input_ids: [batch_size, seq_len], seq_len is the max length of the batch
+    attention_mask: same size as input_ids, 1 represents non-padding tokens, 0 represents padding tokens
+    """
+    # get the embedding for each input token
+    embedding_output = self.embed(input_ids=input_ids)
+
+    # feed to a transformer (a stack of BertLayers)
+    sequence_output = self.encode(embedding_output, attention_mask=attention_mask, task_id=task_id)
+
+    # get cls token hidden state
+    first_tk = sequence_output[:, 0]
+    first_tk = self.pooler_dense(first_tk)
+    first_tk = self.pooler_af(first_tk)
+
+    return {'last_hidden_state': sequence_output, 'pooler_output': first_tk}
+
+  
