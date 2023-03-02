@@ -579,7 +579,7 @@ def train_multitask(args):
         if args.projection != "none":
             for i in tqdm(range(int(num_batches_per_epoch / 3)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
                 losses = []
-                for name in ['sst', 'sts', 'para']:
+                for name in ['sst', 'sts']:
                     losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=False))
                     train_loss[name] += losses[-1].item()
                     num_batches[name] += 1
