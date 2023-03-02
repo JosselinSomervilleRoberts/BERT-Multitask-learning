@@ -772,7 +772,7 @@ def get_args():
     print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = print_length, var_length = 20)
     print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = print_length, var_length = 25)
 
-    hyperparameters = ["n_hidden_layers", "batch_size", "epochs", "lr", "hidden_dropout_prob", "seed"]
+    hyperparameters = ["n_hidden_layers", "batch_size", "epochs", "lr", "hidden_dropout_prob", "seed", "task_scheduler"]
     if args.option == "finetune": hyperparameters += ["num_batches_per_epoch"]
     print_subset_of_args(args, "HYPERPARAMETERS", hyperparameters, color = Colors.GREEN, print_length = print_length, var_length = 30)
     

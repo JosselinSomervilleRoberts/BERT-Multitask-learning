@@ -12,6 +12,7 @@ if __name__ == '__main__':
     for scheduler in schedulers:
         print(f'Running {scheduler} scheduler')
         args.task_scheduler = scheduler
+        args.use_gpu = True
         args.save_loss_logs = True
         seed_everything(args.seed)  # fix the seed for reproducibility
         train_multitask(args)
