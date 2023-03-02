@@ -73,6 +73,36 @@ class BertSelfAttention(nn.Module):
     return attn_value
 
 
+# Implement a Bert Self-Attention Layer with Projected Attention Layer (PAL)
+# This adds a low rank attention mechanism per task to the original BERT self-attention layer
+
+class TaskSpecificAttention(nn.Module):
+  def __init__(self, config):
+    super().__init__()
+    self.project_down = nn.Linear(config.hidden_size, config.low_rank_size)
+    self.project_up = nn.Linear(config.low_rank_size, config.hidden_size)
+    config.hidden_size = config.low_rank_size
+    self.attention = BertSelfAttention(config)
+
+  def forward(self, hidden_states, attention_mask):
+    """
+    hidden_states: [bs, seq_len, hidden_state]
+    attention_mask: [bs, 1, 1, seq_len]
+    output: [bs, seq_len, hidden_state]
+    """
+    # Step 1: project to a lower rank space
+    low_rank_hidden_states = self.project_down(hidden_states)
+    low_rank_attention_mask = attention_mask
+
+    # Step 2: apply the original BERT self-attention layer
+    attn_value = self.attention(low_rank_hidden_states, low_rank_attention_mask)
+
+    # Step 3: project back to the original hidden size
+    attn_value = self.project_up(attn_value)
+
+    return attn_value
+
+
 class BertLayer(nn.Module):
   def __init__(self, config):
     super().__init__()
@@ -123,6 +153,51 @@ class BertLayer(nn.Module):
     return output
 
 
+class BertLayerWithPAL(BertLayer):
+  def __init__(self, config):
+    super().__init__(config)
+    
+    # Task-specific attention
+    self.task_attention = nn.ModuleList([TaskSpecificAttention(config) for task in range(config.num_tasks)])
+
+
+  def forward(self, hidden_states, attention_mask, task_id):
+    """
+    hidden_states: [bs, seq_len, hidden_state]
+    attention_mask: [bs, 1, 1, seq_len]
+    task_id: int
+    output: [bs, seq_len, hidden_state]
+    """
+    self_attention_output = self.self_attention(hidden_states, attention_mask)
+    task_attention_output = self.task_attention[task_id](hidden_states, attention_mask)
+    attention_output = self_attention_output + task_attention_output
+    self_attention_output = self.add_norm(hidden_states, attention_output, self.attention_dense, self.attention_dropout, self.attention_layer_norm)
+    interm_output = self.interm_af(self.interm_dense(self_attention_output))
+    output = self.add_norm(self_attention_output, interm_output, self.out_dense, self.out_dropout, self.out_layer_norm)
+    return output
+
+  def from_BertLayer(bert_layer, config):
+    """
+    this function is used to convert a BertLayer to BertLayerWithPAL
+    bert_layer: BertLayer
+    config: BertConfig
+    output: BertLayerWithPAL
+    """
+    # Hint: you can use the following code to convert a BertLayer to BertLayerWithPAL
+    # pal_layer = BertLayerWithPAL.from_BertLayer(bert_layer, config)
+    pal_layer = BertLayerWithPAL(config)
+    pal_layer.self_attention = bert_layer.self_attention
+    pal_layer.attention_dense = bert_layer.attention_dense
+    pal_layer.attention_layer_norm = bert_layer.attention_layer_norm
+    pal_layer.attention_dropout = bert_layer.attention_dropout
+    pal_layer.interm_dense = bert_layer.interm_dense
+    pal_layer.interm_af = bert_layer.interm_af
+    pal_layer.out_dense = bert_layer.out_dense
+    pal_layer.out_layer_norm = bert_layer.out_layer_norm
+    pal_layer.out_dropout = bert_layer.out_dropout
+    return pal_layer
+
+
 
 class BertModel(BertPreTrainedModel):
   """
@@ -147,7 +222,10 @@ class BertModel(BertPreTrainedModel):
     self.register_buffer('position_ids', position_ids)
 
     # bert encoder
-    self.bert_layers = nn.ModuleList([BertLayer(config) for _ in range(config.num_hidden_layers)])
+    bert_layer=BertLayer 
+    # if "bert_layer" in config and config.bert_layer == "bert_layer_with_pal":
+    #   bert_layer=BertLayerWithPAL
+    self.bert_layers = nn.ModuleList([bert_layer(config) for _ in range(config.num_hidden_layers)])
 
     # for [CLS] token
     self.pooler_dense = nn.Linear(config.hidden_size, config.hidden_size)

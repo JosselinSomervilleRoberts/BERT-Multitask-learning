@@ -5,8 +5,9 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from config import BertConfig
 
-from bert import BertModel
+from bert import BertModel, BertLayerWithPAL
 from tokenizer import BertTokenizer
 from optimizer import AdamW
 from torch.cuda.amp import GradScaler, autocast
@@ -454,6 +455,10 @@ def train_multitask(args):
     config = SimpleNamespace(**config)
 
     model = MultitaskBERT(config)
+    # Convert BertLayers to BertLayerWithPal
+    bert_config = BertConfig()
+    model.bert.bert_layers = nn.ModuleList([BertLayerWithPAL.from_BertLayer(bert_layer, bert_config) for bert_layer in model.bert.bert_layers])
+
     if args.pretrained_model_name != "none":
         config = load_model(model, args.pretrained_model_name)
     model = model.to(device)
