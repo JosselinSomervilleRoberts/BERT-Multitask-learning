@@ -536,7 +536,7 @@ def train_multitask(args):
 
         # Load best model for each task
         for task in infos.keys():
-            infos[task]['layer'].load_state_dict(infos[task]['best_model'])
+            if infos[task]['best_model'] is not None: infos[task]['layer'].load_state_dict(infos[task]['best_model'])
         
         # Evaluate on dev set
         print(Colors.BOLD + Colors.CYAN + f'{"     Evaluation Multitask     ":-^{os.get_terminal_size().columns}}' + Colors.END + Colors.CYAN)
