@@ -69,14 +69,14 @@ class MultitaskBERT(nn.Module):
         # You will want to add layers here to perform the downstream tasks.
         # Pretrain mode does not require updating bert paramters.
         self.bert = BertModel.from_pretrained("bert-base-uncased")
-        bert_config = BertConfig()
-        BertModelWithPAL.from_BertModel(self.bert, bert_config)
         self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
         for param in self.bert.parameters():
             if config.option == 'finetune':
                 param.requires_grad = True
             else:
                 param.requires_grad = False
+        bert_config = BertConfig()
+        BertModelWithPAL.from_BertModel(self.bert, bert_config)
         
         # Step 2: Add a linear layer for sentiment classification
         self.dropout_sentiment = nn.ModuleList([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
