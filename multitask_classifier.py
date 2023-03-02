@@ -664,14 +664,14 @@ def train_multitask(args):
     
     if args.save_loss_logs:
         # Write train_loss_logs_epochs to file
-        with open('train_loss_logs_epochs.txt', 'w') as f:
-            f.write('{}\n'.format(args.task_scheduler))
+        with open('train_loss_logs_epochs_{}_{}.txt'.format(args.task_scheduler, args.n_hidden_layers), 'w') as f:
+            f.write('{} {} hidden layer\n'.format(args.task_scheduler, args.n_hidden_layers))
             # Loop through the dictionary items and write them to the file
             for key, value in train_loss_logs_epochs.items():
                 f.write('{}: {}\n'.format(key, value))
         #Write dev_acc_logs_epochs to file
-        with open('dev_acc_logs_epochs.txt', 'w') as f:
-            f.write('{}\n'.format(args.task_scheduler))
+        with open('dev_acc_logs_epochs_{}_{}.txt'.format(args.task_scheduler, args.n_hidden_layers), 'w') as f:
+            f.write('{} {} hidden layer\n'.format(args.task_scheduler, args.n_hidden_layers))
             # Loop through the dictionary items and write them to the file
             for key, value in dev_acc_logs_epochs.items():
                 f.write('{}: {}\n'.format(key, value))
