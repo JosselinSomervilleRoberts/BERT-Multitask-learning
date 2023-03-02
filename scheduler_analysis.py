@@ -18,6 +18,7 @@ if __name__ == '__main__':
     args.learning_rate = 0.0005
     args.option = "finetune"
     print(args.option)
+    args.epochs= 1
     for scheduler in schedulers:
         #We load the pretrained model
         print(f'Running {scheduler} scheduler')
