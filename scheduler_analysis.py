@@ -3,17 +3,23 @@ from multitask_classifier import *
 
 
 if __name__ == '__main__':
+    #First, we pretrain the model
     args = get_args()
     args.epochs = 12
     args.learning_rate = 0.001
+    args.use_gpu = True
+    args.save_loss_logs = True
+    seed_everything(args.seed)  # fix the seed for reproducibility
+    train_multitask(args)
 
+    #Now, we fine-tune the model with different schedulers
     schedulers = ['random', 'round_robin', 'pal']
-
+    args.learning_rate = 0.0005
+    args.option == "finetune"
     for scheduler in schedulers:
+        #We load the pretrained model
         print(f'Running {scheduler} scheduler')
-        args.task_scheduler = scheduler
-        args.use_gpu = True
-        args.save_loss_logs = True
-        seed_everything(args.seed)  # fix the seed for reproducibility
+        args.task_scheduler = scheduler    
+        args.model_path = f'./models/{scheduler}_scheduler.pt'
         train_multitask(args)
         print(f'Finished {scheduler} scheduler')
