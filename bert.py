@@ -79,10 +79,12 @@ class BertSelfAttention(nn.Module):
 class TaskSpecificAttention(nn.Module):
   def __init__(self, config):
     super().__init__()
+    #print("Creating project down layer with hidden size", config.hidden_size, "and low rank size", config.low_rank_size)
     self.project_down = nn.Linear(config.hidden_size, config.low_rank_size)
     self.project_up = nn.Linear(config.low_rank_size, config.hidden_size)
-    config.hidden_size = config.low_rank_size
-    self.attention = BertSelfAttention(config)
+    config_self_attention = copy.deepcopy(config)
+    config_self_attention.hidden_size = config.low_rank_size
+    self.attention = BertSelfAttention(config_self_attention)
 
   def forward(self, hidden_states, attention_mask):
     """
@@ -91,11 +93,15 @@ class TaskSpecificAttention(nn.Module):
     output: [bs, seq_len, hidden_state]
     """
     # Step 1: project to a lower rank space
+    #print("Project down shape", self.project_down
+    #print("hidden_states", hidden_states.shape)
     low_rank_hidden_states = self.project_down(hidden_states)
+    #print("low_rank_hidden_states", low_rank_hidden_states.shape)
     low_rank_attention_mask = attention_mask
 
     # Step 2: apply the original BERT self-attention layer
     attn_value = self.attention(low_rank_hidden_states, low_rank_attention_mask)
+    #print("attn_value", attn_value.shape)
 
     # Step 3: project back to the original hidden size
     attn_value = self.project_up(attn_value)
@@ -174,6 +180,7 @@ class BertLayerWithPAL(BertLayer):
     self_attention_output = self.add_norm(hidden_states, attention_output, self.attention_dense, self.attention_dropout, self.attention_layer_norm)
     interm_output = self.interm_af(self.interm_dense(self_attention_output))
     output = self.add_norm(self_attention_output, interm_output, self.out_dense, self.out_dropout, self.out_layer_norm)
+    #print("output", output.shape)
     return output
 
   def from_BertLayer(bert_layer, config):
@@ -185,17 +192,10 @@ class BertLayerWithPAL(BertLayer):
     """
     # Hint: you can use the following code to convert a BertLayer to BertLayerWithPAL
     # pal_layer = BertLayerWithPAL.from_BertLayer(bert_layer, config)
-    pal_layer = BertLayerWithPAL(config)
-    pal_layer.self_attention = bert_layer.self_attention
-    pal_layer.attention_dense = bert_layer.attention_dense
-    pal_layer.attention_layer_norm = bert_layer.attention_layer_norm
-    pal_layer.attention_dropout = bert_layer.attention_dropout
-    pal_layer.interm_dense = bert_layer.interm_dense
-    pal_layer.interm_af = bert_layer.interm_af
-    pal_layer.out_dense = bert_layer.out_dense
-    pal_layer.out_layer_norm = bert_layer.out_layer_norm
-    pal_layer.out_dropout = bert_layer.out_dropout
-    return pal_layer
+    bert_layer.__class__ = BertLayerWithPAL
+    #print(config.low_rank_size)
+    bert_layer.task_attention = nn.ModuleList([TaskSpecificAttention(config) for task in range(config.num_tasks)])
+    return bert_layer
 
 
 
@@ -310,7 +310,9 @@ class BertModelWithPAL(BertModel):
     # pass the hidden states through the encoder layers
     for i, layer_module in enumerate(self.bert_layers):
       # feed the encoding from the last bert_layer to the next
+      #print("Encode layer: ", i, " task_id: ", task_id, " hidden_states: ", hidden_states.shape, " attention_mask: ", extended_attention_mask.shape)
       hidden_states = layer_module(hidden_states, extended_attention_mask, task_id=task_id)
+      #print("hidden_states after layer: ", hidden_states.shape)
 
     return hidden_states
 
