@@ -195,7 +195,10 @@ class BertLayerWithPAL(BertLayer):
     bert_layer.__class__ = BertLayerWithPAL
     #print(config.low_rank_size)
     bert_layer.task_attention = nn.ModuleList([TaskSpecificAttention(config) for task in range(config.num_tasks)])
-    bert_layer.requires_grad_(True)
+    
+    for param in bert_layer.parameters():
+      param.requires_grad = True
+      
     return bert_layer
 
 
