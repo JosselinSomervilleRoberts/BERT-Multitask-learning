@@ -17,10 +17,11 @@ if __name__ == '__main__':
     schedulers = ['random', 'round_robin', 'pal']
     args.learning_rate = 0.0005
     args.option == "finetune"
+    print(args.option)
     for scheduler in schedulers:
         #We load the pretrained model
         print(f'Running {scheduler} scheduler')
         args.task_scheduler = scheduler    
         args.filepath = f'{args.option}-{args.epochs}-{args.lr}-{args.task_scheduler}-multitask.pt' # save path
-        train_multitask(args)
+        #train_multitask(args)
         print(f'Finished {scheduler} scheduler')
