@@ -54,6 +54,12 @@ BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
 N_STS_CLASSES = 6
 
+def get_term_width():
+    try:
+        return os.get_terminal_size().columns
+    except OSError:
+        return 80
+
 
 class MultitaskBERT(nn.Module):
     '''
@@ -502,9 +508,9 @@ def train_multitask(args):
         
         for task in ['sst', 'sts', 'para']:
             optimizer = AdamW(model.parameters(), lr=lr)
-            terminal_width = os.get_terminal_size().columns
+            terminal_width = get_term_width()
             last_improv = -1
-            print(Colors.BOLD + f'{"     Individually Pretraining " + task + "     ":-^{os.get_terminal_size().columns}}' + Colors.END)
+            print(Colors.BOLD + f'{"     Individually Pretraining " + task + "     ":-^{get_term_width()}}' + Colors.END)
             for epoch in range(args.epochs):
                 for i in tqdm(range(infos[task]['num_batches']), desc=task + ' epoch ' + str(epoch), disable=TQDM_DISABLE, smoothing=0):
                     loss = scheduler.process_named_batch(name=task, objects_group=objects_group, args=args)
@@ -527,7 +533,7 @@ def train_multitask(args):
 
                 if epoch != args.epochs - 1: print("")
                 elif epoch - last_improv >= args.patience:
-                    print(Colors.BOLD + Colors.RED + f'{"Early stopping":^{os.get_terminal_size().columns}}' + Colors.END)
+                    print(Colors.BOLD + Colors.RED + f'{"Early stopping":^{get_term_width()}}' + Colors.END)
                     break
             print("-" * terminal_width)
             print('\n\n')
@@ -537,7 +543,7 @@ def train_multitask(args):
             infos[task]['layer'].load_state_dict(infos[task]['best_model'])
         
         # Evaluate on dev set
-        print(Colors.BOLD + Colors.CYAN + f'{"     Evaluation Multitask     ":-^{os.get_terminal_size().columns}}' + Colors.END + Colors.CYAN)
+        print(Colors.BOLD + Colors.CYAN + f'{"     Evaluation Multitask     ":-^{get_term_width()}}' + Colors.END + Colors.CYAN)
         (paraphrase_accuracy, para_y_pred, para_sent_ids,
             sentiment_accuracy,sst_y_pred, sst_sent_ids,
             sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
@@ -569,7 +575,7 @@ def train_multitask(args):
     
     last_improv = -1
     for epoch in range(args.epochs):
-        print(Colors.BOLD + f'{"     Epoch " + str(epoch) + "     ":-^{os.get_terminal_size().columns}}' + Colors.END)
+        print(Colors.BOLD + f'{"     Epoch " + str(epoch) + "     ":-^{get_term_width()}}' + Colors.END)
         model.train()
         train_loss = {'sst': 0, 'para': 0, 'sts': 0}
         num_batches = {'sst': 0, 'para': 0, 'sts': 0}
@@ -629,7 +635,7 @@ def train_multitask(args):
             color_score, saved = Colors.PURPLE, True
             last_improv = epoch
 
-        terminal_width = os.get_terminal_size().columns
+        terminal_width = get_term_width()
         spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
         print(Colors.BOLD + f'{"Num batches SST: ":<20}'   + Colors.END + f"{num_batches['sst']:<5}" + " " * spaces_per_task
             + Colors.BOLD + f'{" Num batches Para: ":<20}' + Colors.END + f"{num_batches['para']:<5}" + " " * spaces_per_task
@@ -653,7 +659,7 @@ def train_multitask(args):
         print("")
 
         if epoch - last_improv >= args.patience:
-            print(Colors.BOLD + Colors.RED + f'{"Early stopping":^{os.get_terminal_size().columns}}' + Colors.END)
+            print(Colors.BOLD + Colors.RED + f'{"Early stopping":^{get_term_width()}}' + Colors.END)
             break
     
     if args.save_loss_logs:
