@@ -10,8 +10,8 @@ if __name__ == '__main__':
     args.use_gpu = True
     args.save_loss_logs = True
     seed_everything(args.seed)  # fix the seed for reproducibility
-    args.option = "pretrain"
-    train_multitask(args)
+    #args.option = "pretrain"
+    #train_multitask(args)
 
     #Now, we fine-tune the model with different schedulers
     schedulers = ['random'] #, 'round_robin', 'pal']
