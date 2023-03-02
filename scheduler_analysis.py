@@ -21,6 +21,5 @@ if __name__ == '__main__':
         #We load the pretrained model
         print(f'Running {scheduler} scheduler')
         args.task_scheduler = scheduler    
-        args.model_path = f'./models/{scheduler}_scheduler.pt'
         train_multitask(args)
         print(f'Finished {scheduler} scheduler')
