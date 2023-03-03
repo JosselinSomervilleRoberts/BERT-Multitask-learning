@@ -20,7 +20,7 @@ python3 multitask_classifier.py --num_batches_per_epoch 900 --pretrained_model_n
 mv finetune-10-1e-05-multitask.pt finetune_0_surgery.pt
 
 # FINTETUNE - VACCINE
-python3 multitask_classifier.py --num_batches_per_epoch 900 --pretrained_model_name pretrain_0.pt --use_gpu --use_amp --epochs 10 --lr 1e-5 --batch_size 128 --option finetune --task_scheduler pal --hidden_dropout_prob 0.2  --projection vacce --patience 3 --n_hidden_layers 0 --max_batch_size_sst 64 --max_batch_size_para 32 --max_batch_size_sts 64 > finetune_0_vaccine_logs.txt
+python3 multitask_classifier.py --num_batches_per_epoch 900 --pretrained_model_name pretrain_0.pt --use_gpu --use_amp --epochs 10 --lr 1e-5 --batch_size 128 --option finetune --task_scheduler pal --hidden_dropout_prob 0.2  --projection vaccine --patience 3 --n_hidden_layers 0 --max_batch_size_sst 64 --max_batch_size_para 32 --max_batch_size_sts 64 > finetune_0_vaccine_logs.txt
 mv finetune-10-1e-05-multitask.pt finetune_0_vaccine.pt
 
 
@@ -47,5 +47,5 @@ python3 multitask_classifier.py --num_batches_per_epoch 900 --pretrained_model_n
 mv finetune-10-1e-05-multitask.pt finetune_1_surgery.pt
 
 # FINTETUNE - VACCINE
-python3 multitask_classifier.py --num_batches_per_epoch 900 --pretrained_model_name pretrain_1.pt --use_gpu --use_amp --epochs 10 --lr 1e-5 --batch_size 128 --option finetune --task_scheduler pal --hidden_dropout_prob 0.2  --projection vacce --patience 3 --n_hidden_layers 1 --max_batch_size_sst 64 --max_batch_size_para 32 --max_batch_size_sts 64 > finetune_1_vaccine_logs.txt
+python3 multitask_classifier.py --num_batches_per_epoch 900 --pretrained_model_name pretrain_1.pt --use_gpu --use_amp --epochs 10 --lr 1e-5 --batch_size 128 --option finetune --task_scheduler pal --hidden_dropout_prob 0.2  --projection vaccine --patience 3 --n_hidden_layers 1 --max_batch_size_sst 64 --max_batch_size_para 32 --max_batch_size_sts 64 > finetune_1_vaccine_logs.txt
 mv finetune-10-1e-05-multitask.pt finetune_1_vaccine.pt
