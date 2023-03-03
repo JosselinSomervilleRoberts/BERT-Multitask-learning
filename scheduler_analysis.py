@@ -28,7 +28,7 @@ def compare_schedulers_logs(list_logs):
     plt.show()
 
 
-if main == '__main__':
+if __name__ == '__main__':
     pal_log_0 = read_logs('train_loss_logs_epochs_pal_0.txt')
     random_log_0 = read_logs('train_loss_logs_epochs_random_0.txt')
     round_robin_log_0 = read_logs('train_loss_logs_epochs_round_robin_0.txt')
