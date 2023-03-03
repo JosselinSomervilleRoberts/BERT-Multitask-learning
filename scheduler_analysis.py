@@ -14,7 +14,7 @@ if __name__ == '__main__':
     #train_multitask(args)
 
     #Now, we fine-tune the model with different schedulers
-    schedulers = ['random', 'round_robin', 'pal']
+    schedulers = ['random'] #, 'round_robin', 'pal']
     args.learning_rate = 0.0005
     args.option = "finetune"
     print(args.option)
