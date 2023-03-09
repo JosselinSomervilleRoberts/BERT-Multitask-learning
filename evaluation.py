@@ -57,11 +57,9 @@ def model_eval_sst(dataloader, model, device):
 
     return acc, f1, y_pred, y_true, sents, sent_ids
 
-# Perform model evaluation in terms by averaging accuracies across tasks.
-def model_eval_multitask(sentiment_dataloader,
-                         paraphrase_dataloader,
-                         sts_dataloader,
-                         model, device):
+
+
+def model_eval_paraphrase(paraphrase_dataloader, model, device):
     model.eval()  # switch to eval model, will turn off randomness like dropout
 
     with torch.no_grad():
@@ -91,11 +89,17 @@ def model_eval_multitask(sentiment_dataloader,
             para_sent_ids.extend(b_sent_ids)
 
         paraphrase_accuracy = np.mean(np.array(para_y_pred) == np.array(para_y_true))
+        return paraphrase_accuracy, para_y_pred, para_sent_ids
 
+
+
+def model_eval_sts(sts_dataloader, model, device):
+    model.eval()  # switch to eval model, will turn off randomness like dropout
+
+    with torch.no_grad():
         sts_y_true = []
         sts_y_pred = []
         sts_sent_ids = []
-
 
         # Evaluate semantic textual similarity.
         for step, batch in enumerate(tqdm(sts_dataloader, desc=f'eval', disable=TQDM_DISABLE)):
@@ -119,8 +123,14 @@ def model_eval_multitask(sentiment_dataloader,
             sts_sent_ids.extend(b_sent_ids)
         pearson_mat = np.corrcoef(sts_y_pred,sts_y_true)
         sts_corr = pearson_mat[1][0]
+        return sts_corr, sts_y_pred, sts_sent_ids
 
 
+
+def model_eval_sentiment(sentiment_dataloader, model, device):
+    model.eval()  # switch to eval model, will turn off randomness like dropout
+
+    with torch.no_grad():
         sst_y_true = []
         sst_y_pred = []
         sst_sent_ids = []
@@ -141,14 +151,24 @@ def model_eval_multitask(sentiment_dataloader,
             sst_sent_ids.extend(b_sent_ids)
 
         sentiment_accuracy = np.mean(np.array(sst_y_pred) == np.array(sst_y_true))
+        return sentiment_accuracy, sst_y_pred, sst_sent_ids
 
-        # print(f'Paraphrase detection accuracy: {paraphrase_accuracy:.3f}')
-        # print(f'Sentiment classification accuracy: {sentiment_accuracy:.3f}')
-        # print(f'Semantic Textual Similarity correlation: {sts_corr:.3f}')
 
-        return (paraphrase_accuracy, para_y_pred, para_sent_ids,
-                sentiment_accuracy,sst_y_pred, sst_sent_ids,
-                sts_corr, sts_y_pred, sts_sent_ids)
+
+# Perform model evaluation in terms by averaging accuracies across tasks.
+def model_eval_multitask(sentiment_dataloader,
+                         paraphrase_dataloader,
+                         sts_dataloader,
+                         model, device):
+    paraphrase_accuracy, para_y_pred, para_sent_ids = model_eval_paraphrase(paraphrase_dataloader, model, device)
+    sts_corr, sts_y_pred, sts_sent_ids = model_eval_sts(sts_dataloader, model, device)
+    sentiment_accuracy, sst_y_pred, sst_sent_ids = model_eval_sentiment(sentiment_dataloader, model, device)
+
+    return (paraphrase_accuracy, para_y_pred, para_sent_ids,
+            sentiment_accuracy,sst_y_pred, sst_sent_ids,
+            sts_corr, sts_y_pred, sts_sent_ids)
+
+
 
 # Perform model evaluation in terms by averaging accuracies across tasks.
 def model_eval_test_multitask(sentiment_dataloader,
@@ -242,7 +262,7 @@ def test_model_multitask(args, model, device):
                                         collate_fn=sst_dev_data.collate_fn)
 
         para_test_data = SentencePairTestDataset(para_test_data, args)
-        para_dev_data = SentencePairDataset(para_dev_data, args)
+        para_dev_data = SentencePairDataset(para_dev_data, args) 
 
         para_test_dataloader = DataLoader(para_test_data, shuffle=True, batch_size=args.batch_size,
                                           collate_fn=para_test_data.collate_fn)
@@ -250,7 +270,7 @@ def test_model_multitask(args, model, device):
                                          collate_fn=para_dev_data.collate_fn)
 
         sts_test_data = SentencePairTestDataset(sts_test_data, args)
-        sts_dev_data = SentencePairDataset(sts_dev_data, args)
+        sts_dev_data = SentencePairDataset(sts_dev_data, args, isRegression=True)
 
         sts_test_dataloader = DataLoader(sts_test_data, shuffle=True, batch_size=args.batch_size,
                                          collate_fn=sts_test_data.collate_fn)
