@@ -126,14 +126,9 @@ class MultitaskBERT(nn.Module):
 
         return logits
 
-
-    def predict_paraphrase(self,
-                           input_ids_1, attention_mask_1,
+    def get_similarity_paraphrase_embeddings(self, input_ids_1, attention_mask_1,
                            input_ids_2, attention_mask_2):
-        '''Given a batch of pairs of sentences, outputs a single logit for predicting whether they are paraphrases.
-        Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
-        during evaluation, and handled as a logit by the appropriate loss function.
-        '''
+        '''Given a batch of pairs of sentences, get the BERT embeddings.'''
         # Step 0: Get [SEP] token ids
         sep_token_id = torch.tensor([self.tokenizer.sep_token_id], dtype=torch.long, device=input_ids_1.device)
         batch_sep_token_id = sep_token_id.repeat(input_ids_1.shape[0], 1)
@@ -145,13 +140,25 @@ class MultitaskBERT(nn.Module):
         # Step 2: Get the BERT embeddings
         x = self.forward(input_id, attention_mask)
 
-        # Step 3: Hidden layers
+        return x
+
+    def predict_paraphrase(self,
+                           input_ids_1, attention_mask_1,
+                           input_ids_2, attention_mask_2):
+        '''Given a batch of pairs of sentences, outputs a single logit for predicting whether they are paraphrases.
+        Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
+        during evaluation, and handled as a logit by the appropriate loss function.
+        '''
+        # Step 1: Get the BERT embeddings
+        x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
+
+        # Step 2: Hidden layers
         for i in range(len(self.linear_paraphrase) - 1):
             x = self.dropout_paraphrase[i](x)
             x = self.linear_paraphrase[i](x)
             x = F.relu(x)
 
-        # Step 4: Final layer
+        # Step 3: Final layer
         x = self.dropout_paraphrase[-1](x)
         logits = self.linear_paraphrase[-1](x)
         # logits = torch.sigmoid(logits)
@@ -166,16 +173,8 @@ class MultitaskBERT(nn.Module):
         Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
         during evaluation, and handled as a logit by the appropriate loss function.
         '''
-        # Step 0: Get [SEP] token ids
-        sep_token_id = torch.tensor([self.tokenizer.sep_token_id], dtype=torch.long, device=input_ids_1.device)
-        batch_sep_token_id = sep_token_id.repeat(input_ids_1.shape[0], 1)
-
-        # Step 1: Concatenate the two sentences in: sent1 [SEP] sent2 [SEP]
-        input_id = torch.cat((input_ids_1, batch_sep_token_id, input_ids_2, batch_sep_token_id), dim=1)
-        attention_mask = torch.cat((attention_mask_1, torch.ones_like(batch_sep_token_id), attention_mask_2, torch.ones_like(batch_sep_token_id)), dim=1)
-
-        # Step 2: Get the BERT embeddings
-        x = self.forward(input_id, attention_mask)
+        # Step 1 : Get the BERT embeddings
+        x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
 
         # Step 3: Hidden layers
         for i in range(len(self.linear_similarity) - 1):
