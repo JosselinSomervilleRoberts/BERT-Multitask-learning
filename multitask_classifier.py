@@ -128,6 +128,21 @@ class MultitaskBERT(nn.Module):
         return logits
 
 
+    def get_similarity_paraphrase_embeddings(self, input_ids_1, attention_mask_1,
+                           input_ids_2, attention_mask_2):
+        '''Given a batch of pairs of sentences, get the BERT embeddings.'''
+        # Step 0: Get [SEP] token ids
+        sep_token_id = torch.tensor([self.tokenizer.sep_token_id], dtype=torch.long, device=input_ids_1.device)
+        batch_sep_token_id = sep_token_id.repeat(input_ids_1.shape[0], 1)
+
+        # Step 1: Concatenate the two sentences in: sent1 [SEP] sent2 [SEP]
+        input_id = torch.cat((input_ids_1, batch_sep_token_id, input_ids_2, batch_sep_token_id), dim=1)
+        attention_mask = torch.cat((attention_mask_1, torch.ones_like(batch_sep_token_id), attention_mask_2, torch.ones_like(batch_sep_token_id)), dim=1)
+
+        # Step 2: Get the BERT embeddings
+        x = self.forward(input_id, attention_mask)
+
+        return x
     def predict_paraphrase(self,
                            input_ids_1, attention_mask_1,
                            input_ids_2, attention_mask_2):
@@ -135,31 +150,22 @@ class MultitaskBERT(nn.Module):
         Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
         during evaluation, and handled as a logit by the appropriate loss function.
         '''
-        # Step 0: Get [SEP] token ids
-        sep_token_id = torch.tensor([self.tokenizer.sep_token_id], dtype=torch.long, device=input_ids_1.device)
-        batch_sep_token_id = sep_token_id.repeat(input_ids_1.shape[0], 1)
+        # Step 1: Get the BERT embeddings
+        x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
 
-        # Step 1: Concatenate the two sentences in: sent1 [SEP] sent2 [SEP]
-        input_id = torch.cat((input_ids_1, batch_sep_token_id, input_ids_2, batch_sep_token_id), dim=1)
-        attention_mask = torch.cat((attention_mask_1, torch.ones_like(batch_sep_token_id), attention_mask_2, torch.ones_like(batch_sep_token_id)), dim=1)
-
-        # Step 2: Get the BERT embeddings
-        x = self.forward(input_id, attention_mask)
-
-        # Step 3: Hidden layers
+        # Step 2: Hidden layers
         for i in range(len(self.linear_paraphrase) - 1):
             x = self.dropout_paraphrase[i](x)
             x = self.linear_paraphrase[i](x)
             x = F.relu(x)
 
-        # Step 4: Final layer
+        # Step 3: Final layer
         x = self.dropout_paraphrase[-1](x)
         logits = self.linear_paraphrase[-1](x)
         # logits = torch.sigmoid(logits)
 
         return logits
-
-
+    
     def predict_similarity(self,
                            input_ids_1, attention_mask_1,
                            input_ids_2, attention_mask_2):
@@ -167,24 +173,17 @@ class MultitaskBERT(nn.Module):
         Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
         during evaluation, and handled as a logit by the appropriate loss function.
         '''
-        # Step 0: Get [SEP] token ids
-        sep_token_id = torch.tensor([self.tokenizer.sep_token_id], dtype=torch.long, device=input_ids_1.device)
-        batch_sep_token_id = sep_token_id.repeat(input_ids_1.shape[0], 1)
+        
+        # Step 1: Get the BERT embeddings
+        x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
 
-        # Step 1: Concatenate the two sentences in: sent1 [SEP] sent2 [SEP]
-        input_id = torch.cat((input_ids_1, batch_sep_token_id, input_ids_2, batch_sep_token_id), dim=1)
-        attention_mask = torch.cat((attention_mask_1, torch.ones_like(batch_sep_token_id), attention_mask_2, torch.ones_like(batch_sep_token_id)), dim=1)
-
-        # Step 2: Get the BERT embeddings
-        x = self.forward(input_id, attention_mask)
-
-        # Step 3: Hidden layers
+        # Step 2: Hidden layers
         for i in range(len(self.linear_similarity) - 1):
             x = self.dropout_similarity[i](x)
             x = self.linear_similarity[i](x)
             x = F.relu(x)
 
-        # Step 4: Final layer
+        # Step 3: Final layer
         x = self.dropout_similarity[-1](x)
         preds = self.linear_similarity[-1](x)
         # preds = torch.sigmoid(preds) * 6 - 0.5 # Scale to [-0.5, 5.5]
@@ -203,6 +202,7 @@ class ObjectsGroup:
         self.optimizer = optimizer
         self.scaler = scaler
         self.loss_sum = 0
+
 
 class Scheduler:
 
@@ -269,8 +269,7 @@ class Scheduler:
         if apply_optimization: step_optimizer(objects_group, args, step=self.steps[name])
 
         return loss_of_batch
-
-
+    
 class RandomScheduler(Scheduler):
 
     def __init__(self, dataloaders):
@@ -313,7 +312,6 @@ class PalScheduler(Scheduler):
         name = np.random.choice(self.names, p=probs)
         return name, self.process_named_batch(objects_group, args, name)
 
-
 def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
     device = args.device
     model, scaler = objects_group.model, objects_group.scaler
@@ -322,15 +320,18 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
         b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
 
-        embeddings = model.get_embeddings(b_ids, b_mask)
         logits = model.predict_sentiment(b_ids, b_mask)
-        #Define SMART loss
-        smart_loss_fn = SMARTLoss(eval_fn = model.predict_sentiment, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)
-        #Compute classification loss
         loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
-        #Compute SMART loss
-        loss_value += 0.2 * smart_loss_fn(embeddings, logits)
+
+        if args.smart_regularization == True:
+            #Compute embeddings
+            embeddings = model.forward(b_ids, b_mask)
+            #Define SMART loss
+            smart_loss_fn = SMARTLoss(eval_fn = model.predict_sentiment, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)
+            #Compute SMART loss
+            loss_value += 0.2 * smart_loss_fn(embeddings, logits)            
+    
         objects_group.loss_sum += loss_value
         
         if args.projection == "none":
@@ -348,12 +349,18 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
 
         preds = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-        #Define SMART loss
-        #smart_loss_fn = SMARTLoss(eval_fn = eval, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)
         loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum') / args.batch_size
         loss_value = loss.item()
-        #Compute SMART loss
-        #loss_value += 0.2 * smart_loss_fn(embeddings, logits)
+        
+        if args.smart_regularization == True:
+            #Get the BERT embeddings
+            embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+            logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+            #Define SMART loss
+            smart_loss_fn = SMARTLoss(eval_fn = model.predict_paraphrase, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)            
+            #Compute SMART loss
+            loss_value += 0.2 * smart_loss_fn(embeddings, logits)            
+        
         objects_group.loss_sum += loss_value
         
         if args.projection == "none":
@@ -373,8 +380,16 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         preds = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
         loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
-        objects_group.loss_sum += loss_value
-        
+
+        if args.smart_regularization == True:
+            #Get the BERT embeddings
+            embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+            logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+            #Define SMART loss
+            smart_loss_fn = SMARTLoss(eval_fn = model.predict_similarity, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)
+            #Compute SMART loss
+            loss_value += 0.2 * smart_loss_fn(embeddings, logits)
+            
         if args.projection == "none":
             if args.use_amp: scaler.scale(loss).backward()
             else: loss.backward()
@@ -404,7 +419,6 @@ def finish_training_batch(objects_group: ObjectsGroup, args: dict, step: int, gr
         return True
     return False
 
-
 def save_model(model, optimizer, args, config, filepath):
     save_info = {
         'model': model.state_dict(),
@@ -419,7 +433,6 @@ def save_model(model, optimizer, args, config, filepath):
     torch.save(save_info, filepath)
     # print(f"save the model to {filepath}")
     return filepath
-
 
 def train_multitask(args):
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
@@ -739,7 +752,7 @@ def get_args():
     parser.add_argument("--projection", type=str, choices=('none', 'pcgrad', 'vaccine'), default="none")
     parser.add_argument("--beta_vaccine", type=float, default=1e-2)
     parser.add_argument("--patience", type=int, help="Number maximum of epochs without improvement", default=5)
-
+    parser.add_argument("--smart_regularization", type=bool, default=False)
     args = parser.parse_args()
 
     # Makes sure that the actual batch sizes are not too large
