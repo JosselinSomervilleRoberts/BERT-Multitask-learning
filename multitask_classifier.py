@@ -662,7 +662,7 @@ def train_multitask(args):
             print(Colors.BOLD + Colors.RED + f'{"Early stopping":^{get_term_width()}}' + Colors.END)
             break
     
-    if args.save_loss_logs:
+    if args.save_loss_acc_logs:
         # Write train_loss_logs_epochs to file
         with open('train_loss_logs_epochs_{}_{}.txt'.format(args.task_scheduler, args.n_hidden_layers), 'w') as f:
             f.write('{} {} hidden layer\n'.format(args.task_scheduler, args.n_hidden_layers))
@@ -741,7 +741,7 @@ def get_args():
     parser.add_argument("--sts_test_out", type=str, default="predictions/sts-test-output.csv")
 
     #Arugment to save logs through the epochs (train loss and dev accuracy)
-    parser.add_argument("--save_loss_logs", type=bool, default=False)
+    parser.add_argument("--save_loss_acc_logs", type=bool, default=False)
 
     # hyper parameters
     parser.add_argument("--batch_size", help='This is the simulated batch size using gradient accumulations', type=int, default=256)
