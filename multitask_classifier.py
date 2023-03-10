@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from bert import BertModel
 from tokenizer import BertTokenizer
 from optimizer import AdamW
+from smart_pytorch import SMARTLoss, kl_loss, sym_kl_loss
 from torch.cuda.amp import GradScaler, autocast
 from contextlib import nullcontext
 from tqdm import tqdm
@@ -323,8 +324,17 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         logits = model.predict_sentiment(b_ids, b_mask)
         loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
-        objects_group.loss_sum += loss_value
         
+        if args.smart_regularization == True:
+            #Compute embeddings
+            embeddings = model.forward(b_ids, b_mask)
+            #Define SMART loss
+            smart_loss_fn = SMARTLoss(eval_fn = model.predict_sentiment, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)
+            #Compute SMART loss
+            loss_value += 0.2 * smart_loss_fn(embeddings, logits)            
+
+        objects_group.loss_sum += loss_value
+
         if args.projection == "none":
             if args.use_amp: scaler.scale(loss).backward()
             else: loss.backward()
@@ -342,6 +352,16 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
         preds = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
         loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum') / args.batch_size
         loss_value = loss.item()
+
+        if args.smart_regularization == True:
+            #Get the BERT embeddings
+            embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+            logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+            #Define SMART loss
+            smart_loss_fn = SMARTLoss(eval_fn = model.predict_paraphrase, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)            
+            #Compute SMART loss
+            loss_value += 0.2 * smart_loss_fn(embeddings, logits)    
+
         objects_group.loss_sum += loss_value
         
         if args.projection == "none":
@@ -361,6 +381,16 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         preds = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
         loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
+
+        if args.smart_regularization == True:
+            #Get the BERT embeddings
+            embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+            logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+            #Define SMART loss
+            smart_loss_fn = SMARTLoss(eval_fn = model.predict_similarity, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)
+            #Compute SMART loss
+            loss_value += 0.2 * smart_loss_fn(embeddings, logits)
+
         objects_group.loss_sum += loss_value
         
         if args.projection == "none":
@@ -727,6 +757,7 @@ def get_args():
     parser.add_argument("--projection", type=str, choices=('none', 'pcgrad', 'vaccine'), default="none")
     parser.add_argument("--beta_vaccine", type=float, default=1e-2)
     parser.add_argument("--patience", type=int, help="Number maximum of epochs without improvement", default=5)
+    parser.add_argument("--smart_regularization", type=bool, default=False)
 
     args = parser.parse_args()
 
