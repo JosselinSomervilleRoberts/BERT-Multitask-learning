@@ -54,6 +54,12 @@ BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
 N_STS_CLASSES = 6
 
+def get_term_width():
+    try:
+        return os.get_terminal_size().columns
+    except OSError:
+        return 80
+
 
 class MultitaskBERT(nn.Module):
     '''
@@ -483,6 +489,9 @@ def train_multitask(args):
         scheduler = RandomScheduler(dataloaders)
 
 
+    # Loss logs
+    train_loss_logs_epochs = {'sst': [], 'para': [], 'sts': []}
+    dev_acc_logs_epochs = {'sst': [], 'para': [], 'sts': []}
 
     # ==================== THIS IS INDIVIDUAL PRETRAINING ====================
 
@@ -499,9 +508,9 @@ def train_multitask(args):
         
         for task in ['sst', 'sts', 'para']:
             optimizer = AdamW(model.parameters(), lr=lr)
-            terminal_width = os.get_terminal_size().columns
+            terminal_width = get_term_width()
             last_improv = -1
-            print(Colors.BOLD + f'{"     Individually Pretraining " + task + "     ":-^{os.get_terminal_size().columns}}' + Colors.END)
+            print(Colors.BOLD + f'{"     Individually Pretraining " + task + "     ":-^{get_term_width()}}' + Colors.END)
             for epoch in range(args.epochs):
                 for i in tqdm(range(infos[task]['num_batches']), desc=task + ' epoch ' + str(epoch), disable=TQDM_DISABLE, smoothing=0):
                     loss = scheduler.process_named_batch(name=task, objects_group=objects_group, args=args)
@@ -524,7 +533,7 @@ def train_multitask(args):
 
                 if epoch != args.epochs - 1: print("")
                 elif epoch - last_improv >= args.patience:
-                    print(Colors.BOLD + Colors.RED + f'{"Early stopping":^{os.get_terminal_size().columns}}' + Colors.END)
+                    print(Colors.BOLD + Colors.RED + f'{"Early stopping":^{get_term_width()}}' + Colors.END)
                     break
             print("-" * terminal_width)
             print('\n\n')
@@ -534,7 +543,7 @@ def train_multitask(args):
             infos[task]['layer'].load_state_dict(infos[task]['best_model'])
         
         # Evaluate on dev set
-        print(Colors.BOLD + Colors.CYAN + f'{"     Evaluation Multitask     ":-^{os.get_terminal_size().columns}}' + Colors.END + Colors.CYAN)
+        print(Colors.BOLD + Colors.CYAN + f'{"     Evaluation Multitask     ":-^{get_term_width()}}' + Colors.END + Colors.CYAN)
         (paraphrase_accuracy, para_y_pred, para_sent_ids,
             sentiment_accuracy,sst_y_pred, sst_sent_ids,
             sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
@@ -566,7 +575,7 @@ def train_multitask(args):
     
     last_improv = -1
     for epoch in range(args.epochs):
-        print(Colors.BOLD + f'{"     Epoch " + str(epoch) + "     ":-^{os.get_terminal_size().columns}}' + Colors.END)
+        print(Colors.BOLD + f'{"     Epoch " + str(epoch) + "     ":-^{get_term_width()}}' + Colors.END)
         model.train()
         train_loss = {'sst': 0, 'para': 0, 'sts': 0}
         num_batches = {'sst': 0, 'para': 0, 'sts': 0}
@@ -589,12 +598,18 @@ def train_multitask(args):
         # Compute average train loss
         for task in train_loss:
             train_loss[task] = 0 if num_batches[task] == 0 else train_loss[task] / num_batches[task]
+            train_loss_logs_epochs[task].append(train_loss[task])
 
         # Eval on dev
         (paraphrase_accuracy, para_y_pred, para_sent_ids,
         sentiment_accuracy,sst_y_pred, sst_sent_ids,
         sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
         
+        #We keep track of the accuracies for each task for each epoch
+        dev_acc_logs_epochs['sst'].append(sentiment_accuracy)
+        dev_acc_logs_epochs['para'].append(paraphrase_accuracy)
+        dev_acc_logs_epochs['sts'].append(sts_corr)
+
         # Useful for deg
         # paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
 
@@ -620,7 +635,7 @@ def train_multitask(args):
             color_score, saved = Colors.PURPLE, True
             last_improv = epoch
 
-        terminal_width = os.get_terminal_size().columns
+        terminal_width = get_term_width()
         spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
         print(Colors.BOLD + f'{"Num batches SST: ":<20}'   + Colors.END + f"{num_batches['sst']:<5}" + " " * spaces_per_task
             + Colors.BOLD + f'{" Num batches Para: ":<20}' + Colors.END + f"{num_batches['para']:<5}" + " " * spaces_per_task
@@ -644,9 +659,22 @@ def train_multitask(args):
         print("")
 
         if epoch - last_improv >= args.patience:
-            print(Colors.BOLD + Colors.RED + f'{"Early stopping":^{os.get_terminal_size().columns}}' + Colors.END)
+            print(Colors.BOLD + Colors.RED + f'{"Early stopping":^{get_term_width()}}' + Colors.END)
             break
-
+    
+    if args.save_loss_acc_logs:
+        # Write train_loss_logs_epochs to file
+        with open('train_loss_logs_epochs_{}_{}.txt'.format(args.task_scheduler, args.n_hidden_layers), 'w') as f:
+            f.write('{} {} hidden layer\n'.format(args.task_scheduler, args.n_hidden_layers))
+            # Loop through the dictionary items and write them to the file
+            for key, value in train_loss_logs_epochs.items():
+                f.write('{}: {}\n'.format(key, value))
+        #Write dev_acc_logs_epochs to file
+        with open('dev_acc_logs_epochs_{}_{}.txt'.format(args.task_scheduler, args.n_hidden_layers), 'w') as f:
+            f.write('{} {} hidden layer\n'.format(args.task_scheduler, args.n_hidden_layers))
+            # Loop through the dictionary items and write them to the file
+            for key, value in dev_acc_logs_epochs.items():
+                f.write('{}: {}\n'.format(key, value))
 
 
 def load_model(model, filepath):
@@ -711,6 +739,10 @@ def get_args():
 
     parser.add_argument("--sts_dev_out", type=str, default="predictions/sts-dev-output.csv")
     parser.add_argument("--sts_test_out", type=str, default="predictions/sts-test-output.csv")
+
+    #Arugment to save logs through the epochs (train loss and dev accuracy)
+    parser.add_argument("--save_loss_acc_logs", type=bool, default=False)
+
     # hyper parameters
     parser.add_argument("--batch_size", help='This is the simulated batch size using gradient accumulations', type=int, default=256)
     parser.add_argument("--hidden_dropout_prob", type=float, default=0.2)
@@ -813,4 +845,5 @@ if __name__ == "__main__":
     args.filepath = f'{args.option}-{args.epochs}-{args.lr}-multitask.pt' # save path
     seed_everything(args.seed)  # fix the seed for reproducibility
     if args.option != "test": train_multitask(args)
+    if args.option == "test": args.filepath = args.pretrained_model_name
     if args.option != "pretrain" and args.option != 'individual_pretrain': test_model(args)
