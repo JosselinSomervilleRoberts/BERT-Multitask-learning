@@ -370,9 +370,14 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
             #Compute embeddings
             embeddings = model.forward(b_ids, b_mask)
             #Define SMART loss
-            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_sentiment, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)
+            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_sentiment, loss_fn = kl_loss, 
+                                    num_steps = 1,          # Number of optimization steps to find noise (default = 1)
+                                    step_size = 1e-5,       # Step size to improve noise (default = 1e-3)
+                                    epsilon = 1e-6,         # Noise norm constraint (default = 1e-6)
+                                    noise_var = 1e-6        # Initial noise variance (default = 1e-5)
+                                    )
             #Compute SMART loss
-            loss_value += 0.2 * smart_loss_fn(embeddings, logits)            
+            loss_value += args.smart_weight_regularization * smart_loss_fn(embeddings, logits)            
 
         objects_group.loss_sum += loss_value
 
@@ -399,9 +404,14 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
             embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
             logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
             #Define SMART loss
-            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_paraphrase, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)            
+            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_paraphrase, loss_fn = kl_loss,
+                                    num_steps = 1,          # Number of optimization steps to find noise (default = 1)
+                                    step_size = 1e-5,       # Step size to improve noise (default = 1e-3)
+                                    epsilon = 1e-6,         # Noise norm constraint (default = 1e-6)
+                                    noise_var = 1e-6        # Initial noise variance (default = 1e-5)
+                                    )         
             #Compute SMART loss
-            loss_value += 0.2 * smart_loss_fn(embeddings, logits)    
+            loss_value += args.smart_weight_regularization * smart_loss_fn(embeddings, logits)    
 
         objects_group.loss_sum += loss_value
         
@@ -428,9 +438,14 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
             embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
             logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
             #Define SMART loss
-            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_similarity , loss_fn = kl_loss, loss_last_fn = sym_kl_loss)
+            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_similarity , loss_fn = loss,
+                                    num_steps = 1,          # Number of optimization steps to find noise (default = 1)
+                                    step_size = 1e-5,       # Step size to improve noise (default = 1e-3)
+                                    epsilon = 1e-6,         # Noise norm constraint (default = 1e-6)
+                                    noise_var = 1e-6        # Initial noise variance (default = 1e-5)
+                                    )
             #Compute SMART loss
-            loss_value += 0.2 * smart_loss_fn(embeddings, logits)
+            loss_value += args.smart_weight_regularization * smart_loss_fn(embeddings, logits)
 
         objects_group.loss_sum += loss_value
         
@@ -799,6 +814,7 @@ def get_args():
     parser.add_argument("--beta_vaccine", type=float, default=1e-2)
     parser.add_argument("--patience", type=int, help="Number maximum of epochs without improvement", default=5)
     parser.add_argument("--smart_regularization", type=bool, default=False)
+    parser.add_argument("--smart_weight_regularization", type=float, default=0.1)
 
     args = parser.parse_args()
 
