@@ -370,7 +370,7 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
             #Compute embeddings
             embeddings = model.forward(b_ids, b_mask)
             #Define SMART loss
-            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_sentiment, loss_fn = kl_loss, 
+            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_sentiment, loss_fn = kl_loss, loss_last_fn = sym_kl_loss,
                                     num_steps = 1,          # Number of optimization steps to find noise (default = 1)
                                     step_size = 1e-5,       # Step size to improve noise (default = 1e-3)
                                     epsilon = 1e-6,         # Noise norm constraint (default = 1e-6)
@@ -404,7 +404,7 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
             embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
             logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
             #Define SMART loss
-            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_paraphrase, loss_fn = kl_loss,
+            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_paraphrase, loss_fn = kl_loss, loss_last_fn = sym_kl_loss,
                                     num_steps = 1,          # Number of optimization steps to find noise (default = 1)
                                     step_size = 1e-5,       # Step size to improve noise (default = 1e-3)
                                     epsilon = 1e-6,         # Noise norm constraint (default = 1e-6)
@@ -438,7 +438,7 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
             embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
             logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
             #Define SMART loss
-            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_similarity , loss_fn = loss,
+            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_similarity , loss_fn = kl_loss, loss_last_fn = sym_kl_loss,
                                     num_steps = 1,          # Number of optimization steps to find noise (default = 1)
                                     step_size = 1e-5,       # Step size to improve noise (default = 1e-3)
                                     epsilon = 1e-6,         # Noise norm constraint (default = 1e-6)
