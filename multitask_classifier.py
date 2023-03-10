@@ -105,6 +105,7 @@ class MultitaskBERT(nn.Module):
         return cls_embeddings
 
     def last_layers_sentiment(self, x):
+        """Given a batch of sentences embeddings, outputs logits for classifying sentiment."""
         # Step 2: Hidden layers
         for i in range(len(self.linear_sentiment) - 1):
             x = self.dropout_sentiment[i](x)
@@ -125,18 +126,6 @@ class MultitaskBERT(nn.Module):
         '''
         # Step 1: Get the BERT embeddings
         x = self.forward(input_ids, attention_mask)
-
-        # # Step 2: Hidden layers
-        # for i in range(len(self.linear_sentiment) - 1):
-        #     x = self.dropout_sentiment[i](x)
-        #     x = self.linear_sentiment[i](x)
-        #     x = F.relu(x)
-
-        # # Step 3: Final layer
-        # x = self.dropout_sentiment[-1](x)
-        # logits = self.linear_sentiment[-1](x)
-        # # logits = F.softmax(logits, dim=1)
-
         return self.last_layers_sentiment(x)
 
     def get_similarity_paraphrase_embeddings(self, input_ids_1, attention_mask_1,
@@ -156,6 +145,7 @@ class MultitaskBERT(nn.Module):
         return x
     
     def last_layers_paraphrase(self, x):
+        """Given a batch of pairs of sentences embedding, outputs logits for predicting whether they are paraphrases."""
         #Step 2: Hidden layers
         for i in range(len(self.linear_paraphrase) - 1):
             x = self.dropout_paraphrase[i](x)
@@ -177,21 +167,11 @@ class MultitaskBERT(nn.Module):
         '''
         # Step 1: Get the BERT embeddings
         x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
-
-        # # Step 2: Hidden layers
-        # for i in range(len(self.linear_paraphrase) - 1):
-        #     x = self.dropout_paraphrase[i](x)
-        #     x = self.linear_paraphrase[i](x)
-        #     x = F.relu(x)
-
-        # # Step 3: Final layer
-        # x = self.dropout_paraphrase[-1](x)
-        # logits = self.linear_paraphrase[-1](x)
-        # # logits = torch.sigmoid(logits)
         return self.last_layers_paraphrase(x)
 
 
     def last_layers_similarity(self, x):
+        """Given a batch of pairs of sentences embeddings, outputs logits for predicting how similar they are."""
         # Step 3: Hidden layers
         for i in range(len(self.linear_similarity) - 1):
             x = self.dropout_similarity[i](x)
@@ -217,22 +197,6 @@ class MultitaskBERT(nn.Module):
         '''
         # Step 1 : Get the BERT embeddings
         x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
-
-        # # Step 3: Hidden layers
-        # for i in range(len(self.linear_similarity) - 1):
-        #     x = self.dropout_similarity[i](x)
-        #     x = self.linear_similarity[i](x)
-        #     x = F.relu(x)
-
-        # # Step 4: Final layer
-        # x = self.dropout_similarity[-1](x)
-        # preds = self.linear_similarity[-1](x)
-        # # preds = torch.sigmoid(preds) * 6 - 0.5 # Scale to [-0.5, 5.5]
-
-        # # # If we are evaluating, then we cap the predictions to the range [0, 5]
-        # # if not self.training:
-        # #     preds = torch.clamp(preds, 0, 5)
-
         return self.last_layers_similarity(x)
 
 
