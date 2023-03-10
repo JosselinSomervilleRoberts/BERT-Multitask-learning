@@ -104,16 +104,7 @@ class MultitaskBERT(nn.Module):
         cls_embeddings = bert_output['pooler_output']
         return cls_embeddings
 
-
-    def predict_sentiment(self, input_ids, attention_mask):
-        '''Given a batch of sentences, outputs logits for classifying sentiment.
-        There are 5 sentiment classes:
-        (0 - negative, 1- somewhat negative, 2- neutral, 3- somewhat positive, 4- positive)
-        Thus, your output should contain 5 logits for each sentence.
-        '''
-        # Step 1: Get the BERT embeddings
-        x = self.forward(input_ids, attention_mask)
-
+    def last_layers_sentiment(self, x):
         # Step 2: Hidden layers
         for i in range(len(self.linear_sentiment) - 1):
             x = self.dropout_sentiment[i](x)
@@ -124,8 +115,29 @@ class MultitaskBERT(nn.Module):
         x = self.dropout_sentiment[-1](x)
         logits = self.linear_sentiment[-1](x)
         # logits = F.softmax(logits, dim=1)
-
         return logits
+    
+    def predict_sentiment(self, input_ids, attention_mask):
+        '''Given a batch of sentences, outputs logits for classifying sentiment.
+        There are 5 sentiment classes:
+        (0 - negative, 1- somewhat negative, 2- neutral, 3- somewhat positive, 4- positive)
+        Thus, your output should contain 5 logits for each sentence.
+        '''
+        # Step 1: Get the BERT embeddings
+        x = self.forward(input_ids, attention_mask)
+
+        # # Step 2: Hidden layers
+        # for i in range(len(self.linear_sentiment) - 1):
+        #     x = self.dropout_sentiment[i](x)
+        #     x = self.linear_sentiment[i](x)
+        #     x = F.relu(x)
+
+        # # Step 3: Final layer
+        # x = self.dropout_sentiment[-1](x)
+        # logits = self.linear_sentiment[-1](x)
+        # # logits = F.softmax(logits, dim=1)
+
+        return self.last_layers_sentiment(x)
 
     def get_similarity_paraphrase_embeddings(self, input_ids_1, attention_mask_1,
                            input_ids_2, attention_mask_2):
@@ -142,6 +154,19 @@ class MultitaskBERT(nn.Module):
         x = self.forward(input_id, attention_mask)
 
         return x
+    
+    def last_layers_paraphrase(self, x):
+        #Step 2: Hidden layers
+        for i in range(len(self.linear_paraphrase) - 1):
+            x = self.dropout_paraphrase[i](x)
+            x = self.linear_paraphrase[i](x)
+            x = F.relu(x)
+
+        # Step 3: Final layer
+        x = self.dropout_paraphrase[-1](x)
+        logits = self.linear_paraphrase[-1](x)
+        # logits = torch.sigmoid(logits)
+        return logits
 
     def predict_paraphrase(self,
                            input_ids_1, attention_mask_1,
@@ -153,30 +178,20 @@ class MultitaskBERT(nn.Module):
         # Step 1: Get the BERT embeddings
         x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
 
-        # Step 2: Hidden layers
-        for i in range(len(self.linear_paraphrase) - 1):
-            x = self.dropout_paraphrase[i](x)
-            x = self.linear_paraphrase[i](x)
-            x = F.relu(x)
+        # # Step 2: Hidden layers
+        # for i in range(len(self.linear_paraphrase) - 1):
+        #     x = self.dropout_paraphrase[i](x)
+        #     x = self.linear_paraphrase[i](x)
+        #     x = F.relu(x)
 
-        # Step 3: Final layer
-        x = self.dropout_paraphrase[-1](x)
-        logits = self.linear_paraphrase[-1](x)
-        # logits = torch.sigmoid(logits)
+        # # Step 3: Final layer
+        # x = self.dropout_paraphrase[-1](x)
+        # logits = self.linear_paraphrase[-1](x)
+        # # logits = torch.sigmoid(logits)
+        return self.last_layers_paraphrase(x)
 
-        return logits
 
-
-    def predict_similarity(self,
-                           input_ids_1, attention_mask_1,
-                           input_ids_2, attention_mask_2):
-        '''Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
-        Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
-        during evaluation, and handled as a logit by the appropriate loss function.
-        '''
-        # Step 1 : Get the BERT embeddings
-        x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
-
+    def last_layers_similarity(self, x):
         # Step 3: Hidden layers
         for i in range(len(self.linear_similarity) - 1):
             x = self.dropout_similarity[i](x)
@@ -191,8 +206,34 @@ class MultitaskBERT(nn.Module):
         # # If we are evaluating, then we cap the predictions to the range [0, 5]
         # if not self.training:
         #     preds = torch.clamp(preds, 0, 5)
-
         return preds
+    
+    def predict_similarity(self,
+                           input_ids_1, attention_mask_1,
+                           input_ids_2, attention_mask_2):
+        '''Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
+        Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
+        during evaluation, and handled as a logit by the appropriate loss function.
+        '''
+        # Step 1 : Get the BERT embeddings
+        x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
+
+        # # Step 3: Hidden layers
+        # for i in range(len(self.linear_similarity) - 1):
+        #     x = self.dropout_similarity[i](x)
+        #     x = self.linear_similarity[i](x)
+        #     x = F.relu(x)
+
+        # # Step 4: Final layer
+        # x = self.dropout_similarity[-1](x)
+        # preds = self.linear_similarity[-1](x)
+        # # preds = torch.sigmoid(preds) * 6 - 0.5 # Scale to [-0.5, 5.5]
+
+        # # # If we are evaluating, then we cap the predictions to the range [0, 5]
+        # # if not self.training:
+        # #     preds = torch.clamp(preds, 0, 5)
+
+        return self.last_layers_similarity(x)
 
 
 class ObjectsGroup:
@@ -325,15 +366,11 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
         
-        def eval(embed):
-            logits = model.predict_sentiment(embed, b_mask)
-            return logits 
-        
         if args.smart_regularization == True:
             #Compute embeddings
             embeddings = model.forward(b_ids, b_mask)
             #Define SMART loss
-            smart_loss_fn = SMARTLoss(eval_fn = eval, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)
+            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_sentiment, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)
             #Compute SMART loss
             loss_value += 0.2 * smart_loss_fn(embeddings, logits)            
 
@@ -362,7 +399,7 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
             embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
             logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
             #Define SMART loss
-            smart_loss_fn = SMARTLoss(eval_fn = model.predict_paraphrase, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)            
+            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_paraphrase, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)            
             #Compute SMART loss
             loss_value += 0.2 * smart_loss_fn(embeddings, logits)    
 
@@ -391,7 +428,7 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
             embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
             logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
             #Define SMART loss
-            smart_loss_fn = SMARTLoss(eval_fn = model.predict_similarity, loss_fn = kl_loss, loss_last_fn = sym_kl_loss)
+            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_similarity , loss_fn = kl_loss, loss_last_fn = sym_kl_loss)
             #Compute SMART loss
             loss_value += 0.2 * smart_loss_fn(embeddings, logits)
 
