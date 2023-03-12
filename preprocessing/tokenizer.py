@@ -1,3 +1,6 @@
+import sys
+sys.path.append('./')
+
 from typing import List, Optional, Tuple, Dict, Union, Any, overload, Sequence, NamedTuple
 import collections
 import os
@@ -11,7 +14,7 @@ from contextlib import contextmanager
 from collections import OrderedDict, UserDict
 from enum import Enum
 import numpy as np
-from ..utils import cached_path, hf_bucket_url, is_remote_url, is_tf_available, is_torch_available
+from utils import cached_path, hf_bucket_url, is_remote_url, is_tf_available, is_torch_available
 from tokenizers import AddedToken
 from tokenizers import Encoding as EncodingFast
 
