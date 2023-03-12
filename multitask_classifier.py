@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from bert import BertModel
-from tokenizer import BertTokenizer
+from preprocessing.tokenizer import BertTokenizer
 from optimizer import AdamW
 from torch.cuda.amp import GradScaler, autocast
 from contextlib import nullcontext
@@ -18,7 +18,7 @@ from pcgrad_amp import PCGradAMP
 from gradvac_amp import GradVacAMP
 import copy
 
-from datasets import SentenceClassificationDataset, SentencePairDataset, \
+from preprocessing.datasets import SentenceClassificationDataset, SentencePairDataset, \
     load_multitask_data, load_multitask_test_data
 
 from evaluation import model_eval_multitask, test_model_multitask, \
