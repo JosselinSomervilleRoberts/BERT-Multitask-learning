@@ -842,7 +842,7 @@ def get_args():
 
 if __name__ == "__main__":
     args = get_args()
-    args.filepath = f'{args.option}-{args.epochs}-{args.lr}-multitask.pt' # save path
+    args.filepath = f'{args.option}-{args.epochs}-{args.lr}-preprocessing-multitask.pt' # save path
     seed_everything(args.seed)  # fix the seed for reproducibility
     if args.option != "test": train_multitask(args)
     if args.option == "test": args.filepath = args.pretrained_model_name
