@@ -85,17 +85,17 @@ if __name__ == '__main__' :
     print("Sentiment dataset :\n")
     print_length_statistics(df_sentiment, "sentiment")
     print_class_repartition(df_sentiment, "sentiment")
-    generate_preprocessed_csv(df_sentiment, "sentiment", sentiment_filename, max_length = 210)
+    generate_preprocessed_csv(df_sentiment, "sentiment", sentiment_filename, max_length = 300)
     print("\n")
 
     print("Paraphrase dataset :\n")
     print_length_statistics(df_paraphrase, "paraphrase")
     print_class_repartition(df_paraphrase, "paraphrase")
-    generate_preprocessed_csv(df_paraphrase, "paraphrase", paraphrase_filename, max_length = 210)
+    generate_preprocessed_csv(df_paraphrase, "paraphrase", paraphrase_filename, max_length = 300)
     print("\n")
 
     print("Similarity dataset :\n")
     print_length_statistics(df_similarity, "similarity")
-    generate_preprocessed_csv(df_similarity, "similarity", similarity_filename, max_length = 210)
+    generate_preprocessed_csv(df_similarity, "similarity", similarity_filename, max_length = 300)
     print("\n")
 
