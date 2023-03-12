@@ -1,9 +1,9 @@
-
 import sys
-sys.path.append('preprocessing')
+sys.path.append('./')
+
 import unittest
 import pandas as pd
-from datasets_preprocessing_analysis import *
+from preprocessing.datasets_preprocessing_analysis import *
 
 class TestStringMethods(unittest.TestCase):
 

@@ -1,8 +1,9 @@
 '''
 This file analyzes the datasets that we are using.
 '''
-
-from datasets import *
+import sys
+sys.path.append('./')
+from preprocessing.datasets import *
 import pandas as pd
 
 def add_length_column(df, task):
