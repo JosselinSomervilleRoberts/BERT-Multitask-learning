@@ -1,4 +1,7 @@
+import sys
+sys.path.append('src')
 import unittest
+import pandas as pd
 from datasets_preprocessing_analysis import *
 
 class TestStringMethods(unittest.TestCase):
@@ -17,6 +20,7 @@ class TestStringMethods(unittest.TestCase):
         add_length_column(df_sentiment, "sentiment")
         add_length_column(df_paraphrase, "paraphrase")
         add_length_column(df_similarity, "similarity")
+
         # Check the results
         self.assertEqual(df_sentiment['length'][0], 181)
         self.assertEqual(df_paraphrase['length'][0], 79)
