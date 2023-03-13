@@ -11,7 +11,8 @@ def createConfusionMatrix(y_true, y_pred):
 
     # Build confusion matrix
     cf_matrix = confusion_matrix(y_true, y_pred)
-    df_cm = pd.DataFrame(cf_matrix/np.sum(cf_matrix), index=[i for i in classes],
-                         columns=[i for i in classes])
-    plt.figure(figsize=(24, 16))    
-    return sn.heatmap(df_cm, annot=True).get_figure()
+    cf_matrix /= np.sum(cf_matrix)
+    # df_cm = pd.DataFrame(cf_matrix/np.sum(cf_matrix), index=[i for i in classes],
+    #                      columns=[i for i in classes])
+    plt.figure(figsize=(2*num_classes, 2*num_classes))    
+    return sn.heatmap(cf_matrix, annot=True).get_figure()
