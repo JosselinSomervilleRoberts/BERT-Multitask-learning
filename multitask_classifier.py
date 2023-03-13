@@ -314,7 +314,7 @@ class PalScheduler(Scheduler):
         self.reset()
 
     def process_one_batch(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict):
-        alpha = 1 - 0.8 * (epoch - 1) / (num_epochs - 1)
+        alpha = 1 - 0.8 * (epoch - 1) / (num_epochs - 1) if num_epochs > 1 else 0.2
         probs = self.sizes ** alpha
         probs /= np.sum(probs)
 
