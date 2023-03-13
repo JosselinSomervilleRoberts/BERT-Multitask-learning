@@ -26,7 +26,8 @@ from evaluation import model_eval_multitask, test_model_multitask, \
 
 
 from torch.utils.tensorboard import SummaryWriter
-writer = SummaryWriter()
+# Create wrter and name the run as 'test'
+writer = SummaryWriter('runs/test')
 
 
 TQDM_DISABLE = False
