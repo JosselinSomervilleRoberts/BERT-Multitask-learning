@@ -27,7 +27,6 @@ from evaluation import model_eval_multitask, test_model_multitask, \
 
 from torch.utils.tensorboard import SummaryWriter
 writer = SummaryWriter()
-log_dir = writer.log_dir # Get the path of the folder where TensorBoard logs will be saved
 
 
 TQDM_DISABLE = False
@@ -691,12 +690,12 @@ def train_multitask(args):
     
     if args.save_loss_acc_logs:
         # Write train_loss_logs_epochs to file
-        with open(log_dir + '/train_loss.txt', 'w') as f:
+        with open(args.log_dir + '/train_loss.txt', 'w') as f:
             # Loop through the dictionary items and write them to the file
             for key, value in train_loss_logs_epochs.items():
                 f.write('{}: {}\n'.format(key, value))
         #Write dev_acc_logs_epochs to file
-        with open(log_dir + '/dev_acc.txt', 'w') as f:
+        with open(args.log_dir + '/dev_acc.txt', 'w') as f:
             # Loop through the dictionary items and write them to the file
             for key, value in dev_acc_logs_epochs.items():
                 f.write('{}: {}\n'.format(key, value))
@@ -757,14 +756,14 @@ def get_args():
     parser.add_argument("--pretrained_model_name", type=str, default="none")
     parser.add_argument("--use_gpu", action='store_true')
 
-    parser.add_argument("--sst_dev_out", type=str, default="predictions/sst-dev-output.csv")
-    parser.add_argument("--sst_test_out", type=str, default="predictions/sst-test-output.csv")
+    parser.add_argument("--sst_dev_out", type=str, default="/predictions/sst-dev-output.csv")
+    parser.add_argument("--sst_test_out", type=str, default="/predictions/sst-test-output.csv")
 
-    parser.add_argument("--para_dev_out", type=str, default="predictions/para-dev-output.csv")
-    parser.add_argument("--para_test_out", type=str, default="predictions/para-test-output.csv")
+    parser.add_argument("--para_dev_out", type=str, default="/predictions/para-dev-output.csv")
+    parser.add_argument("--para_test_out", type=str, default="/predictions/para-test-output.csv")
 
-    parser.add_argument("--sts_dev_out", type=str, default="predictions/sts-dev-output.csv")
-    parser.add_argument("--sts_test_out", type=str, default="predictions/sts-test-output.csv")
+    parser.add_argument("--sts_dev_out", type=str, default="/predictions/sts-dev-output.csv")
+    parser.add_argument("--sts_test_out", type=str, default="/predictions/sts-test-output.csv")
 
     #Arugment to save logs through the epochs (train loss and dev accuracy)
     parser.add_argument("--save_loss_acc_logs", type=bool, default=False)
@@ -799,8 +798,10 @@ def get_args():
         else:
             s += f" --{arg} {value}"
     print("\n" + Colors.BOLD + "Command to recreate this run:" + Colors.END + s + "\n")
-    # Saves s in log_dir/command.txt
-    with open(os.path.join(log_dir, "command.txt"), "w") as f:
+    
+    # Saves s in args.log_dir/command.txt
+    args.log_dir = writer.log_dir # Get the path of the folder where TensorBoard logs will be saved
+    with open(os.path.join(args.log_dir, "command.txt"), "w") as f:
         f.write(s)
 
     # Makes sure that the actual batch sizes are not too large
@@ -882,7 +883,7 @@ def get_args():
 
 if __name__ == "__main__":
     args = get_args()
-    args.filepath = log_dir + "/best_model.pt" # save path
+    args.filepath = args.log_dir + "/best_model.pt" # save path
     seed_everything(args.seed)  # fix the seed for reproducibility
     if args.option != "test": train_multitask(args)
     if args.option == "test": args.filepath = args.pretrained_model_name
