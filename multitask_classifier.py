@@ -790,7 +790,7 @@ def get_args():
     args = parser.parse_args()
 
     # Logs the command to recreate the same run with all the arguments
-    s = "python3 multitask_classifier.py""
+    s = "python3 multitask_classifier.py"
     for arg in vars(args):
         value = getattr(args, arg)
         if type(value) == bool:
