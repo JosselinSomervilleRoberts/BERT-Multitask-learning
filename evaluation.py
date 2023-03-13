@@ -169,7 +169,7 @@ def model_eval_multitask(sentiment_dataloader,
     if tensorboard and writer is not None:
         writer.add_figure("Confusion matrix SST", createConfusionMatrix(sst_y_true, sst_y_pred), epoch)
         writer.add_figure("Confusion matrix Para", createConfusionMatrix(para_y_true, para_y_pred), epoch)
-        writer.add_figure("Confusion matrix STS", createConfusionMatrix((np.round(sts_y_true,1) * 10).astype(int), (np.round(sts_y_pred,1) * 10).astype(int)), epoch)
+        # writer.add_figure("Confusion matrix STS", createConfusionMatrix((np.round(sts_y_true,1) * 10).astype(int), (np.round(sts_y_pred,1) * 10).astype(int)), epoch)
 
     return (paraphrase_accuracy, para_y_pred, para_sent_ids,
             sentiment_accuracy,sst_y_pred, sst_sent_ids,
