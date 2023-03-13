@@ -797,7 +797,7 @@ def get_args():
             if value:
                 s += f" --{arg}"
         else:
-            s += " --{arg} {value}"
+            s += f" --{arg} {value}"
     print("\n" + Colors.BOLD + "Command to recreate this run:" + Colors.END + s + "\n")
     # Saves s in log_dir/command.txt
     with open(os.path.join(log_dir, "command.txt"), "w") as f:
