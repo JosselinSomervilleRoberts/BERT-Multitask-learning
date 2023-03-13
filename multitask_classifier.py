@@ -27,6 +27,7 @@ from evaluation import model_eval_multitask, test_model_multitask, \
 
 from torch.utils.tensorboard import SummaryWriter
 writer = SummaryWriter()
+log_dir = writer.log_dir # Get the path of the folder where TensorBoard logs will be saved
 
 
 TQDM_DISABLE = False
@@ -789,6 +790,17 @@ def get_args():
     parser.add_argument("--patience", type=int, help="Number maximum of epochs without improvement", default=5)
 
     args = parser.parse_args()
+
+    # Logs the command to recreate the same run with all the arguments
+    print("\n" + Colors.BOLD + "Command to recreate this run:" + Colors.END + " python3 multitask_classifier.py", end=" ")
+    for arg in vars(args):
+        value = getattr(args, arg)
+        if type(value) == bool:
+            if value:
+                print(f"--{arg}", end=" ")
+        else:
+            print(f"--{arg} {value}", end=" ")
+    print("\n")
 
     # Makes sure that the actual batch sizes are not too large
     # Gradient accumulations are used to simulate larger batch sizes
