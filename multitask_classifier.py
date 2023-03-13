@@ -9,7 +9,6 @@ from torch.utils.data import DataLoader
 from bert import BertModel
 from tokenizer import BertTokenizer
 from optimizer import AdamW
-from smart_pytorch import SMARTLoss, kl_loss, sym_kl_loss
 from torch.cuda.amp import GradScaler, autocast
 from contextlib import nullcontext
 from tqdm import tqdm
@@ -18,6 +17,8 @@ from pcgrad import PCGrad
 from pcgrad_amp import PCGradAMP
 from gradvac_amp import GradVacAMP
 import copy
+
+from smart_regularization import smart_regularization
 
 from datasets import SentenceClassificationDataset, SentencePairDataset, \
     load_multitask_data, load_multitask_test_data
@@ -330,18 +331,10 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
         
-        if args.smart_regularization == True:
-            #Compute embeddings
-            embeddings = model.forward(b_ids, b_mask)
-            #Define SMART loss
-            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_sentiment, loss_fn = kl_loss, loss_last_fn = sym_kl_loss,
-                                    num_steps = 1,          # Number of optimization steps to find noise (default = 1)
-                                    step_size = 1e-5,       # Step size to improve noise (default = 1e-3)
-                                    epsilon = 1e-6,         # Noise norm constraint (default = 1e-6)
-                                    noise_var = 1e-6        # Initial noise variance (default = 1e-5)
-                                    )
-            #Compute SMART loss
-            loss_value += args.smart_weight_regularization * smart_loss_fn(embeddings, logits)            
+        if args.use_smart_regularization:
+            inputs = (b_ids, b_mask)
+            smart_regularization(loss_value, args.smart_loss_weight, model.forward, logits, model.last_layers_sentiment, 
+                                 "sentiment", inputs)
 
         objects_group.loss_sum += loss_value
 
@@ -363,19 +356,10 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum') / args.batch_size
         loss_value = loss.item()
 
-        if args.smart_regularization == True:
-            #Get the BERT embeddings
-            embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-            logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-            #Define SMART loss
-            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_paraphrase, loss_fn = kl_loss, loss_last_fn = sym_kl_loss,
-                                    num_steps = 1,          # Number of optimization steps to find noise (default = 1)
-                                    step_size = 1e-5,       # Step size to improve noise (default = 1e-3)
-                                    epsilon = 1e-6,         # Noise norm constraint (default = 1e-6)
-                                    noise_var = 1e-6        # Initial noise variance (default = 1e-5)
-                                    )         
-            #Compute SMART loss
-            loss_value += args.smart_weight_regularization * smart_loss_fn(embeddings, logits)    
+        if args.use_smart_regularization:
+            inputs = (b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+            smart_regularization(loss_value, args.smart_loss_weight, model.forward, preds, model.last_layers_paraphrase,
+                                    "paraphrase", inputs)
 
         objects_group.loss_sum += loss_value
         
@@ -397,19 +381,10 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
 
-        if args.smart_regularization == True:
-            #Get the BERT embeddings
-            embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-            logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-            #Define SMART loss
-            smart_loss_fn = SMARTLoss(eval_fn = model.last_layers_similarity , loss_fn = kl_loss, loss_last_fn = sym_kl_loss,
-                                    num_steps = 1,          # Number of optimization steps to find noise (default = 1)
-                                    step_size = 1e-5,       # Step size to improve noise (default = 1e-3)
-                                    epsilon = 1e-6,         # Noise norm constraint (default = 1e-6)
-                                    noise_var = 1e-6        # Initial noise variance (default = 1e-5)
-                                    )
-            #Compute SMART loss
-            loss_value += args.smart_weight_regularization * smart_loss_fn(embeddings, logits)
+        if args.use_smart_regularization:
+            inputs = (b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+            smart_regularization(loss_value, args.smart_loss_weight, model.forward, preds, model.last_layers_similarity,
+                                    "similarity", inputs)
 
         objects_group.loss_sum += loss_value
         
@@ -777,8 +752,8 @@ def get_args():
     parser.add_argument("--projection", type=str, choices=('none', 'pcgrad', 'vaccine'), default="none")
     parser.add_argument("--beta_vaccine", type=float, default=1e-2)
     parser.add_argument("--patience", type=int, help="Number maximum of epochs without improvement", default=5)
-    parser.add_argument("--smart_regularization", type=bool, default=False)
-    parser.add_argument("--smart_weight_regularization", type=float, default=0.001)
+    parser.add_argument("--use_smart_regularization", action="store_false")
+    parser.add_argument("--smart_weight_regularization", type=float, default=1e-2)
 
     args = parser.parse_args()
 
