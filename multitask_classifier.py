@@ -691,14 +691,12 @@ def train_multitask(args):
     
     if args.save_loss_acc_logs:
         # Write train_loss_logs_epochs to file
-        with open('train_loss_logs_epochs_{}_{}.txt'.format(args.task_scheduler, args.n_hidden_layers), 'w') as f:
-            f.write('{} {} hidden layer\n'.format(args.task_scheduler, args.n_hidden_layers))
+        with open(log_dir + '/train_loss.txt', 'w') as f:
             # Loop through the dictionary items and write them to the file
             for key, value in train_loss_logs_epochs.items():
                 f.write('{}: {}\n'.format(key, value))
         #Write dev_acc_logs_epochs to file
-        with open('dev_acc_logs_epochs_{}_{}.txt'.format(args.task_scheduler, args.n_hidden_layers), 'w') as f:
-            f.write('{} {} hidden layer\n'.format(args.task_scheduler, args.n_hidden_layers))
+        with open(log_dir + '/dev_acc.txt', 'w') as f:
             # Loop through the dictionary items and write them to the file
             for key, value in dev_acc_logs_epochs.items():
                 f.write('{}: {}\n'.format(key, value))
@@ -792,15 +790,18 @@ def get_args():
     args = parser.parse_args()
 
     # Logs the command to recreate the same run with all the arguments
-    print("\n" + Colors.BOLD + "Command to recreate this run:" + Colors.END + " python3 multitask_classifier.py", end=" ")
+    s = "python3 multitask_classifier.py""
     for arg in vars(args):
         value = getattr(args, arg)
         if type(value) == bool:
             if value:
-                print(f"--{arg}", end=" ")
+                s += f" --{arg}"
         else:
-            print(f"--{arg} {value}", end=" ")
-    print("\n")
+            s += " --{arg} {value}"
+    print("\n" + Colors.BOLD + "Command to recreate this run:" + Colors.END + s + "\n")
+    # Saves s in log_dir/command.txt
+    with open(os.path.join(log_dir, "command.txt"), "w") as f:
+        f.write(s)
 
     # Makes sure that the actual batch sizes are not too large
     # Gradient accumulations are used to simulate larger batch sizes
@@ -881,7 +882,7 @@ def get_args():
 
 if __name__ == "__main__":
     args = get_args()
-    args.filepath = f'{args.option}-{args.epochs}-{args.lr}-multitask.pt' # save path
+    args.filepath = log_dir + "/best_model.pt" # save path
     seed_everything(args.seed)  # fix the seed for reproducibility
     if args.option != "test": train_multitask(args)
     if args.option == "test": args.filepath = args.pretrained_model_name
