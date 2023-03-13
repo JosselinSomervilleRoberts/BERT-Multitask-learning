@@ -327,14 +327,14 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
         b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
 
-        logits = model.predict_sentiment(b_ids, b_mask)
+        embeddings = model.forward(b_ids, b_mask)
+        logits = model.last_layer_sentiment(embeddings)
+        
         loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
         
         if args.use_smart_regularization:
-            inputs = (b_ids, b_mask)
-            smart_regularization(loss_value, args.smart_weight_regularization, model.forward, logits, model.last_layers_sentiment, 
-                                 "sentiment", inputs)
+            smart_regularization(loss_value, args.smart_weight_regularization, embeddings, logits, model.last_layers_sentiment)
 
         objects_group.loss_sum += loss_value
 
@@ -352,14 +352,13 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'], batch['attention_mask_1'], batch['token_ids_2'], batch['attention_mask_2'], batch['labels'])
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
 
+        embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
         preds = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
         loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum') / args.batch_size
         loss_value = loss.item()
 
         if args.use_smart_regularization:
-            inputs = (b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-            smart_regularization(loss_value, args.smart_weight_regularization, model.get_similarity_paraphrase_embeddings, preds, 
-                                 model.last_layers_paraphrase, "paraphrase", inputs)
+            smart_regularization(loss_value, args.smart_weight_regularization, embeddings, preds, model.last_layers_paraphrase)
 
         objects_group.loss_sum += loss_value
         
@@ -377,14 +376,13 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'], batch['attention_mask_1'], batch['token_ids_2'], batch['attention_mask_2'], batch['labels'])
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
 
-        preds = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        preds = model.last_layer_similarity(embeddings)
         loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
 
         if args.use_smart_regularization:
-            inputs = (b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-            smart_regularization(loss_value, args.smart_weight_regularization, model.get_similarity_paraphrase_embeddings, preds, 
-                                 model.last_layers_similarity, "similarity", inputs)
+            smart_regularization(loss_value, args.smart_weight_regularization, embeddings, preds, model.last_layers_similarity)
 
         objects_group.loss_sum += loss_value
         
