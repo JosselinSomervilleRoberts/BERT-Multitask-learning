@@ -320,7 +320,8 @@ class PalScheduler(Scheduler):
         self.reset()
 
     def process_one_batch(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict):
-        alpha = 1 - 0.8 * (epoch - 1) / (num_epochs - 1)
+        alpha = 0.2
+        if num_epochs > 1: alpha = 1 - 0.8 * (epoch - 1) / (num_epochs - 1) 
         probs = self.sizes ** alpha
         probs /= np.sum(probs)
 
@@ -540,18 +541,18 @@ def train_multitask(args):
             for epoch in range(args.epochs):
                 for i in tqdm(range(infos[task]['num_batches']), desc=task + ' epoch ' + str(epoch), disable=TQDM_DISABLE, smoothing=0):
                     loss = scheduler.process_named_batch(name=task, objects_group=objects_group, args=args)
-                    writer.add_scalar("Loss pretrain " + task, loss.item(), args.batch_size * (epoch * infos[task]['num_batches'] + i))
+                    if not args.no_tensorboard: writer.add_scalar("Loss pretrain " + task, loss.item(), args.batch_size * (epoch * infos[task]['num_batches'] + i))
                 
                 # Evaluate on dev set
                 color_score, saved = Colors.BLUE, False
-                dev_acc, _, _ = infos[task]['eval_fn'](infos[task]['dev_dataloader'], model, device)
+                dev_acc, _, _, _ = infos[task]['eval_fn'](infos[task]['dev_dataloader'], model, device)
                 if dev_acc > infos[task]['best_dev_acc']:
                     infos[task]['best_dev_acc'] = dev_acc
                     infos[task]['best_model'] = copy.deepcopy(infos[task]['layer'].state_dict())
                     color_score, saved = Colors.PURPLE, True
                     last_improv = epoch
-                writer.add_scalar("[EPOCH] Dev accuracy " + task, dev_acc, epoch)
-                writer.add_scalar("Dev accuracy " + task, dev_acc, epoch * args.batch_size_sts * infos[task]['num_batches'])
+                if not args.no_tensorboard: writer.add_scalar("[EPOCH] Dev accuracy " + task, dev_acc, epoch)
+                if not args.no_tensorboard: writer.add_scalar("Dev accuracy " + task, dev_acc, epoch * args.batch_size_sts * infos[task]['num_batches'])
                 
                 # Print dev accuracy
                 spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
@@ -573,9 +574,9 @@ def train_multitask(args):
         
         # Evaluate on dev set
         print(Colors.BOLD + Colors.CYAN + f'{"     Evaluation Multitask     ":-^{get_term_width()}}' + Colors.END + Colors.CYAN)
-        (paraphrase_accuracy, para_y_pred, para_sent_ids,
-            sentiment_accuracy,sst_y_pred, sst_sent_ids,
-            sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
+        (paraphrase_accuracy, _, _,
+         sentiment_accuracy, _, _,
+         sts_corr, _, _) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, writer=writer, epoch=0, tensorboard=not args.no_tensorboard)
         print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'    + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.3f}" + " " * spaces_per_task
             + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}'  + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.3f}" + " " * spaces_per_task
             + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'   + Colors.END + Colors.CYAN + f"{sts_corr:.3f}")
@@ -615,7 +616,7 @@ def train_multitask(args):
                 for j, name in enumerate(['sst', 'sts', 'para']):
                     losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=False))
                     train_loss[name] += losses[-1].item()
-                    writer.add_scalar("Loss " + args.option + " " + name, losses[-1].item(), args.batch_size * (epoch * num_batches_per_epoch + 3 * i + j))
+                    if not args.no_tensorboard: writer.add_scalar("Loss " + args.option + " " + name, losses[-1].item(), args.batch_size * (epoch * num_batches_per_epoch + 3 * i + j))
                     num_batches[name] += 1
                 optimizer.backward(losses)
                 optimizer.step()
@@ -623,7 +624,7 @@ def train_multitask(args):
             for i in tqdm(range(num_batches_per_epoch), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
                 task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
                 train_loss[task] += loss.item()
-                writer.add_scalar("Loss " + args.option + " " + task, loss.item(), args.batch_size * (epoch * num_batches_per_epoch + i))
+                if not args.no_tensorboard: writer.add_scalar("Loss " + args.option + " " + task, loss.item(), args.batch_size * (epoch * num_batches_per_epoch + i))
                 num_batches[task] += 1
 
         # Compute average train loss
@@ -632,9 +633,9 @@ def train_multitask(args):
             train_loss_logs_epochs[task].append(train_loss[task])
 
         # Eval on dev
-        (paraphrase_accuracy, para_y_pred, para_sent_ids,
-        sentiment_accuracy,sst_y_pred, sst_sent_ids,
-        sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
+        (paraphrase_accuracy, _, _,
+        sentiment_accuracy,_, _,
+        sts_corr, _, _) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, writer=writer, epoch=epoch, tensorboard=not args.no_tensorboard)
         
         #We keep track of the accuracies for each task for each epoch
         dev_acc_logs_epochs['sst'].append(sentiment_accuracy)
@@ -657,20 +658,21 @@ def train_multitask(args):
         arithmetic_mean_acc = (paraphrase_accuracy + sentiment_accuracy + sts_corr) / 3
         
         # Write to tensorboard
-        writer.add_scalar("[EPOCH] Dev accuracy sst", sentiment_accuracy, epoch)
-        writer.add_scalar("[EPOCH] Dev accuracy para", paraphrase_accuracy, epoch)
-        writer.add_scalar("[EPOCH] Dev accuracy sts", sts_corr, epoch)
-        writer.add_scalar("[EPOCH] Dev accuracy mean", arithmetic_mean_acc, epoch)
-        writer.add_scalar("[EPOCH] Num batches sst", num_batches['sst'], epoch)
-        writer.add_scalar("[EPOCH] Num batches para", num_batches['para'], epoch)
-        writer.add_scalar("[EPOCH] Num batches sts", num_batches['sts'], epoch)
-        writer.add_scalar("Dev accuracy sst", sentiment_accuracy, epoch * args.batch_size * num_batches_per_epoch)
-        writer.add_scalar("Dev accuracy para", paraphrase_accuracy, epoch * args.batch_size * num_batches_per_epoch)
-        writer.add_scalar("Dev accuracy sts", sts_corr, epoch * args.batch_size * num_batches_per_epoch)
-        writer.add_scalar("Dev accuracy mean", arithmetic_mean_acc, epoch * args.batch_size * num_batches_per_epoch)
-        writer.add_scalar("Num batches sst", num_batches['sst'], epoch * args.batch_size * num_batches_per_epoch)
-        writer.add_scalar("Num batches para", num_batches['para'], epoch * args.batch_size * num_batches_per_epoch)
-        writer.add_scalar("Num batches sts", num_batches['sts'], epoch * args.batch_size * num_batches_per_epoch)
+        if not args.no_tensorboard: 
+            writer.add_scalar("[EPOCH] Dev accuracy sst", sentiment_accuracy, epoch)
+            writer.add_scalar("[EPOCH] Dev accuracy para", paraphrase_accuracy, epoch)
+            writer.add_scalar("[EPOCH] Dev accuracy sts", sts_corr, epoch)
+            writer.add_scalar("[EPOCH] Dev accuracy mean", arithmetic_mean_acc, epoch)
+            writer.add_scalar("[EPOCH] Num batches sst", num_batches['sst'], epoch)
+            writer.add_scalar("[EPOCH] Num batches para", num_batches['para'], epoch)
+            writer.add_scalar("[EPOCH] Num batches sts", num_batches['sts'], epoch)
+            writer.add_scalar("Dev accuracy sst", sentiment_accuracy, epoch * args.batch_size * num_batches_per_epoch)
+            writer.add_scalar("Dev accuracy para", paraphrase_accuracy, epoch * args.batch_size * num_batches_per_epoch)
+            writer.add_scalar("Dev accuracy sts", sts_corr, epoch * args.batch_size * num_batches_per_epoch)
+            writer.add_scalar("Dev accuracy mean", arithmetic_mean_acc, epoch * args.batch_size * num_batches_per_epoch)
+            writer.add_scalar("Num batches sst", num_batches['sst'], epoch * args.batch_size * num_batches_per_epoch)
+            writer.add_scalar("Num batches para", num_batches['para'], epoch * args.batch_size * num_batches_per_epoch)
+            writer.add_scalar("Num batches sts", num_batches['sts'], epoch * args.batch_size * num_batches_per_epoch)
 
         # Saves model if it is the best one so far on the dev set
         color_score, saved = Colors.BLUE, False
@@ -711,14 +713,12 @@ def train_multitask(args):
     
     if args.save_loss_acc_logs:
         # Write train_loss_logs_epochs to file
-        with open('train_loss_logs_epochs_{}_{}.txt'.format(args.task_scheduler, args.n_hidden_layers), 'w') as f:
-            f.write('{} {} hidden layer\n'.format(args.task_scheduler, args.n_hidden_layers))
+        with open(args.log_dir + '/train_loss.txt', 'w') as f:
             # Loop through the dictionary items and write them to the file
             for key, value in train_loss_logs_epochs.items():
                 f.write('{}: {}\n'.format(key, value))
         #Write dev_acc_logs_epochs to file
-        with open('dev_acc_logs_epochs_{}_{}.txt'.format(args.task_scheduler, args.n_hidden_layers), 'w') as f:
-            f.write('{} {} hidden layer\n'.format(args.task_scheduler, args.n_hidden_layers))
+        with open(args.log_dir + '/dev_acc.txt', 'w') as f:
             # Loop through the dictionary items and write them to the file
             for key, value in dev_acc_logs_epochs.items():
                 f.write('{}: {}\n'.format(key, value))
@@ -770,6 +770,7 @@ def get_args():
     parser.add_argument("--sts_dev", type=str, default="data/sts-dev.csv")
     parser.add_argument("--sts_test", type=str, default="data/sts-test-student.csv")
 
+    parser.add_argument("--no_tensorboard", action='store_true', help="Dont log to tensorboard")
     parser.add_argument("--seed", type=int, default=11711)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--option", type=str,
@@ -778,14 +779,14 @@ def get_args():
     parser.add_argument("--pretrained_model_name", type=str, default="none")
     parser.add_argument("--use_gpu", action='store_true')
 
-    parser.add_argument("--sst_dev_out", type=str, default="predictions/sst-dev-output.csv")
-    parser.add_argument("--sst_test_out", type=str, default="predictions/sst-test-output.csv")
+    parser.add_argument("--sst_dev_out", type=str, default="/predictions/sst-dev-output.csv")
+    parser.add_argument("--sst_test_out", type=str, default="/predictions/sst-test-output.csv")
 
-    parser.add_argument("--para_dev_out", type=str, default="predictions/para-dev-output.csv")
-    parser.add_argument("--para_test_out", type=str, default="predictions/para-test-output.csv")
+    parser.add_argument("--para_dev_out", type=str, default="/predictions/para-dev-output.csv")
+    parser.add_argument("--para_test_out", type=str, default="/predictions/para-test-output.csv")
 
-    parser.add_argument("--sts_dev_out", type=str, default="predictions/sts-dev-output.csv")
-    parser.add_argument("--sts_test_out", type=str, default="predictions/sts-test-output.csv")
+    parser.add_argument("--sts_dev_out", type=str, default="/predictions/sts-dev-output.csv")
+    parser.add_argument("--sts_test_out", type=str, default="/predictions/sts-test-output.csv")
 
     #Arugment to save logs through the epochs (train loss and dev accuracy)
     parser.add_argument("--save_loss_acc_logs", type=bool, default=False)
@@ -811,6 +812,22 @@ def get_args():
     parser.add_argument("--smart_weight_regularization", type=float, default=1e-2)
 
     args = parser.parse_args()
+
+    # Logs the command to recreate the same run with all the arguments
+    s = "python3 multitask_classifier.py"
+    for arg in vars(args):
+        value = getattr(args, arg)
+        if type(value) == bool:
+            if value:
+                s += f" --{arg}"
+        else:
+            s += f" --{arg} {value}"
+    print("\n" + Colors.BOLD + "Command to recreate this run:" + Colors.END + s + "\n")
+
+    # Saves s in args.log_dir/command.txt
+    args.log_dir = writer.log_dir # Get the path of the folder where TensorBoard logs will be saved
+    with open(os.path.join(args.log_dir, "command.txt"), "w") as f:
+        f.write(s)
 
     # Makes sure that the actual batch sizes are not too large
     # Gradient accumulations are used to simulate larger batch sizes
@@ -891,7 +908,7 @@ def get_args():
 
 if __name__ == "__main__":
     args = get_args()
-    args.filepath = f'{args.option}-{args.epochs}-{args.lr}-multitask.pt' # save path
+    args.filepath = args.log_dir + "/best_model.pt" # save path
     seed_everything(args.seed)  # fix the seed for reproducibility
     if args.option != "test": train_multitask(args)
     if args.option == "test": args.filepath = args.pretrained_model_name

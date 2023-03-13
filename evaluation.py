@@ -20,10 +20,12 @@ from torch.utils.data import DataLoader
 from sklearn.metrics import classification_report, f1_score, recall_score, accuracy_score
 from tqdm import tqdm
 import numpy as np
+import os
 
 from datasets import load_multitask_data, load_multitask_test_data, \
     SentenceClassificationDataset, SentenceClassificationTestDataset, \
     SentencePairDataset, SentencePairTestDataset
+from tensorboard_utils import createConfusionMatrix
 
 
 TQDM_DISABLE = False
@@ -89,7 +91,7 @@ def model_eval_paraphrase(paraphrase_dataloader, model, device):
             para_sent_ids.extend(b_sent_ids)
 
         paraphrase_accuracy = np.mean(np.array(para_y_pred) == np.array(para_y_true))
-        return paraphrase_accuracy, para_y_pred, para_sent_ids
+        return paraphrase_accuracy, para_y_true, para_y_pred, para_sent_ids
 
 
 
@@ -123,7 +125,7 @@ def model_eval_sts(sts_dataloader, model, device):
             sts_sent_ids.extend(b_sent_ids)
         pearson_mat = np.corrcoef(sts_y_pred,sts_y_true)
         sts_corr = pearson_mat[1][0]
-        return sts_corr, sts_y_pred, sts_sent_ids
+        return sts_corr, sts_y_true, sts_y_pred, sts_sent_ids
 
 
 
@@ -151,7 +153,7 @@ def model_eval_sentiment(sentiment_dataloader, model, device):
             sst_sent_ids.extend(b_sent_ids)
 
         sentiment_accuracy = np.mean(np.array(sst_y_pred) == np.array(sst_y_true))
-        return sentiment_accuracy, sst_y_pred, sst_sent_ids
+        return sentiment_accuracy, sst_y_true, sst_y_pred, sst_sent_ids
 
 
 
@@ -159,10 +161,15 @@ def model_eval_sentiment(sentiment_dataloader, model, device):
 def model_eval_multitask(sentiment_dataloader,
                          paraphrase_dataloader,
                          sts_dataloader,
-                         model, device):
-    paraphrase_accuracy, para_y_pred, para_sent_ids = model_eval_paraphrase(paraphrase_dataloader, model, device)
-    sts_corr, sts_y_pred, sts_sent_ids = model_eval_sts(sts_dataloader, model, device)
-    sentiment_accuracy, sst_y_pred, sst_sent_ids = model_eval_sentiment(sentiment_dataloader, model, device)
+                         model, device, writer = None, epoch = None, tensorboard = False):
+    paraphrase_accuracy, para_y_true, para_y_pred, para_sent_ids = model_eval_paraphrase(paraphrase_dataloader, model, device)
+    sts_corr, sts_y_true, sts_y_pred, sts_sent_ids = model_eval_sts(sts_dataloader, model, device)
+    sentiment_accuracy, sst_y_true, sst_y_pred, sst_sent_ids = model_eval_sentiment(sentiment_dataloader, model, device)
+
+    if tensorboard and writer is not None:
+        writer.add_figure("Confusion matrix SST", createConfusionMatrix(sst_y_true, sst_y_pred), epoch)
+        writer.add_figure("Confusion matrix Para", createConfusionMatrix(para_y_true, para_y_pred), epoch)
+        # writer.add_figure("Confusion matrix STS", createConfusionMatrix((np.round(sts_y_true,1) * 10).astype(int), (np.round(sts_y_pred,1) * 10).astype(int)), epoch)
 
     return (paraphrase_accuracy, para_y_pred, para_sent_ids,
             sentiment_accuracy,sst_y_pred, sst_sent_ids,
@@ -247,6 +254,11 @@ def model_eval_test_multitask(sentiment_dataloader,
 
 
 def test_model_multitask(args, model, device):
+        # Creates a folder prediction
+        prediction_folder = args.log_dir + '/predictions'
+        if not os.path.exists(prediction_folder):
+            os.makedirs(prediction_folder)
+
         sst_test_data, num_labels,para_test_data, sts_test_data = \
             load_multitask_data(args.sst_test,args.para_test, args.sts_test, split='test')
 
@@ -289,35 +301,35 @@ def test_model_multitask(args, model, device):
                                           para_test_dataloader,
                                           sts_test_dataloader, model, device)
 
-        with open(args.sst_dev_out, "w+") as f:
+        with open(args.log_dir + args.sst_dev_out, "w+") as f:
             print(f"dev sentiment acc :: {dev_sentiment_accuracy :.3f}")
             f.write(f"id \t Predicted_Sentiment \n")
             for p, s in zip(dev_sst_sent_ids, dev_sst_y_pred):
                 f.write(f"{p} , {s} \n")
 
-        with open(args.sst_test_out, "w+") as f:
+        with open(args.log_dir + args.sst_test_out, "w+") as f:
             f.write(f"id \t Predicted_Sentiment \n")
             for p, s in zip(test_sst_sent_ids, test_sst_y_pred):
                 f.write(f"{p} , {s} \n")
 
-        with open(args.para_dev_out, "w+") as f:
+        with open(args.log_dir + args.para_dev_out, "w+") as f:
             print(f"dev paraphrase acc :: {dev_paraphrase_accuracy :.3f}")
             f.write(f"id \t Predicted_Is_Paraphrase \n")
             for p, s in zip(dev_para_sent_ids, dev_para_y_pred):
                 f.write(f"{p} , {s} \n")
 
-        with open(args.para_test_out, "w+") as f:
+        with open(args.log_dir + args.para_test_out, "w+") as f:
             f.write(f"id \t Predicted_Is_Paraphrase \n")
             for p, s in zip(test_para_sent_ids, test_para_y_pred):
                 f.write(f"{p} , {s} \n")
 
-        with open(args.sts_dev_out, "w+") as f:
+        with open(args.log_dir + args.sts_dev_out, "w+") as f:
             print(f"dev sts corr :: {dev_sts_corr :.3f}")
             f.write(f"id \t Predicted_Similiary \n")
             for p, s in zip(dev_sts_sent_ids, dev_sts_y_pred):
                 f.write(f"{p} , {s} \n")
 
-        with open(args.sts_test_out, "w+") as f:
+        with open(args.log_dir + args.sts_test_out, "w+") as f:
             f.write(f"id \t Predicted_Similiary \n")
             for p, s in zip(test_sts_sent_ids, test_sts_y_pred):
                 f.write(f"{p} , {s} \n")
