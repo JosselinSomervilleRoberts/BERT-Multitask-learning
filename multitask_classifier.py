@@ -328,7 +328,7 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
 
         embeddings = model.forward(b_ids, b_mask)
-        logits = model.last_layer_sentiment(embeddings)
+        logits = model.last_layers_sentiment(embeddings)
         
         loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
