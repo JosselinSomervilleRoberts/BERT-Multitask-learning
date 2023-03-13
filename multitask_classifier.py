@@ -752,7 +752,7 @@ def get_args():
     parser.add_argument("--projection", type=str, choices=('none', 'pcgrad', 'vaccine'), default="none")
     parser.add_argument("--beta_vaccine", type=float, default=1e-2)
     parser.add_argument("--patience", type=int, help="Number maximum of epochs without improvement", default=5)
-    parser.add_argument("--use_smart_regularization", action="store_false")
+    parser.add_argument("--use_smart_regularization", type=bool, default=False)
     parser.add_argument("--smart_weight_regularization", type=float, default=1e-2)
 
     args = parser.parse_args()
