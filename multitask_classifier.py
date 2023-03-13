@@ -358,7 +358,7 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
 
         if args.use_smart_regularization:
             inputs = (b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-            smart_regularization(loss_value, args.smart_weight_regularization, model.forward, preds, model.last_layers_paraphrase,
+            smart_regularization(loss_value, args.smart_weight_regularization, model.model.get_similarity_paraphrase_embeddings, preds, model.last_layers_paraphrase,
                                     "paraphrase", inputs)
 
         objects_group.loss_sum += loss_value
@@ -383,7 +383,7 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
 
         if args.use_smart_regularization:
             inputs = (b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-            smart_regularization(loss_value, args.smart_weight_regularization, model.forward, preds, model.last_layers_similarity,
+            smart_regularization(loss_value, args.smart_weight_regularization, model.model.get_similarity_paraphrase_embeddings, preds, model.last_layers_similarity,
                                     "similarity", inputs)
 
         objects_group.loss_sum += loss_value
