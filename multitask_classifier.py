@@ -18,6 +18,8 @@ from pcgrad_amp import PCGradAMP
 from gradvac_amp import GradVacAMP
 import copy
 
+from smart_regularization import smart_regularization
+
 from datasets import SentenceClassificationDataset, SentencePairDataset, \
     load_multitask_data, load_multitask_test_data
 
@@ -113,16 +115,8 @@ class MultitaskBERT(nn.Module):
         cls_embeddings = bert_output['pooler_output']
         return cls_embeddings
 
-
-    def predict_sentiment(self, input_ids, attention_mask):
-        '''Given a batch of sentences, outputs logits for classifying sentiment.
-        There are 5 sentiment classes:
-        (0 - negative, 1- somewhat negative, 2- neutral, 3- somewhat positive, 4- positive)
-        Thus, your output should contain 5 logits for each sentence.
-        '''
-        # Step 1: Get the BERT embeddings
-        x = self.forward(input_ids, attention_mask)
-
+    def last_layers_sentiment(self, x):
+        """Given a batch of sentences embeddings, outputs logits for classifying sentiment."""
         # Step 2: Hidden layers
         for i in range(len(self.linear_sentiment) - 1):
             x = self.dropout_sentiment[i](x)
@@ -133,9 +127,47 @@ class MultitaskBERT(nn.Module):
         x = self.dropout_sentiment[-1](x)
         logits = self.linear_sentiment[-1](x)
         # logits = F.softmax(logits, dim=1)
-
         return logits
+    
+    def predict_sentiment(self, input_ids, attention_mask):
+        '''Given a batch of sentences, outputs logits for classifying sentiment.
+        There are 5 sentiment classes:
+        (0 - negative, 1- somewhat negative, 2- neutral, 3- somewhat positive, 4- positive)
+        Thus, your output should contain 5 logits for each sentence.
+        '''
+        # Step 1: Get the BERT embeddings
+        x = self.forward(input_ids, attention_mask)
+        return self.last_layers_sentiment(x)
 
+    def get_similarity_paraphrase_embeddings(self, input_ids_1, attention_mask_1,
+                           input_ids_2, attention_mask_2):
+        '''Given a batch of pairs of sentences, get the BERT embeddings.'''
+        # Step 0: Get [SEP] token ids
+        sep_token_id = torch.tensor([self.tokenizer.sep_token_id], dtype=torch.long, device=input_ids_1.device)
+        batch_sep_token_id = sep_token_id.repeat(input_ids_1.shape[0], 1)
+
+        # Step 1: Concatenate the two sentences in: sent1 [SEP] sent2 [SEP]
+        input_id = torch.cat((input_ids_1, batch_sep_token_id, input_ids_2, batch_sep_token_id), dim=1)
+        attention_mask = torch.cat((attention_mask_1, torch.ones_like(batch_sep_token_id), attention_mask_2, torch.ones_like(batch_sep_token_id)), dim=1)
+
+        # Step 2: Get the BERT embeddings
+        x = self.forward(input_id, attention_mask)
+
+        return x
+    
+    def last_layers_paraphrase(self, x):
+        """Given a batch of pairs of sentences embedding, outputs logits for predicting whether they are paraphrases."""
+        #Step 2: Hidden layers
+        for i in range(len(self.linear_paraphrase) - 1):
+            x = self.dropout_paraphrase[i](x)
+            x = self.linear_paraphrase[i](x)
+            x = F.relu(x)
+
+        # Step 3: Final layer
+        x = self.dropout_paraphrase[-1](x)
+        logits = self.linear_paraphrase[-1](x)
+        # logits = torch.sigmoid(logits)
+        return logits
 
     def predict_paraphrase(self,
                            input_ids_1, attention_mask_1,
@@ -144,49 +176,13 @@ class MultitaskBERT(nn.Module):
         Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
         during evaluation, and handled as a logit by the appropriate loss function.
         '''
-        # Step 0: Get [SEP] token ids
-        sep_token_id = torch.tensor([self.tokenizer.sep_token_id], dtype=torch.long, device=input_ids_1.device)
-        batch_sep_token_id = sep_token_id.repeat(input_ids_1.shape[0], 1)
-
-        # Step 1: Concatenate the two sentences in: sent1 [SEP] sent2 [SEP]
-        input_id = torch.cat((input_ids_1, batch_sep_token_id, input_ids_2, batch_sep_token_id), dim=1)
-        attention_mask = torch.cat((attention_mask_1, torch.ones_like(batch_sep_token_id), attention_mask_2, torch.ones_like(batch_sep_token_id)), dim=1)
-
-        # Step 2: Get the BERT embeddings
-        x = self.forward(input_id, attention_mask)
-
-        # Step 3: Hidden layers
-        for i in range(len(self.linear_paraphrase) - 1):
-            x = self.dropout_paraphrase[i](x)
-            x = self.linear_paraphrase[i](x)
-            x = F.relu(x)
-
-        # Step 4: Final layer
-        x = self.dropout_paraphrase[-1](x)
-        logits = self.linear_paraphrase[-1](x)
-        # logits = torch.sigmoid(logits)
-
-        return logits
+        # Step 1: Get the BERT embeddings
+        x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
+        return self.last_layers_paraphrase(x)
 
 
-    def predict_similarity(self,
-                           input_ids_1, attention_mask_1,
-                           input_ids_2, attention_mask_2):
-        '''Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
-        Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
-        during evaluation, and handled as a logit by the appropriate loss function.
-        '''
-        # Step 0: Get [SEP] token ids
-        sep_token_id = torch.tensor([self.tokenizer.sep_token_id], dtype=torch.long, device=input_ids_1.device)
-        batch_sep_token_id = sep_token_id.repeat(input_ids_1.shape[0], 1)
-
-        # Step 1: Concatenate the two sentences in: sent1 [SEP] sent2 [SEP]
-        input_id = torch.cat((input_ids_1, batch_sep_token_id, input_ids_2, batch_sep_token_id), dim=1)
-        attention_mask = torch.cat((attention_mask_1, torch.ones_like(batch_sep_token_id), attention_mask_2, torch.ones_like(batch_sep_token_id)), dim=1)
-
-        # Step 2: Get the BERT embeddings
-        x = self.forward(input_id, attention_mask)
-
+    def last_layers_similarity(self, x):
+        """Given a batch of pairs of sentences embeddings, outputs logits for predicting how similar they are."""
         # Step 3: Hidden layers
         for i in range(len(self.linear_similarity) - 1):
             x = self.dropout_similarity[i](x)
@@ -201,8 +197,18 @@ class MultitaskBERT(nn.Module):
         # # If we are evaluating, then we cap the predictions to the range [0, 5]
         # if not self.training:
         #     preds = torch.clamp(preds, 0, 5)
-
         return preds
+    
+    def predict_similarity(self,
+                           input_ids_1, attention_mask_1,
+                           input_ids_2, attention_mask_2):
+        '''Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
+        Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
+        during evaluation, and handled as a logit by the appropriate loss function.
+        '''
+        # Step 1 : Get the BERT embeddings
+        x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
+        return self.last_layers_similarity(x)
 
 
 class ObjectsGroup:
@@ -331,11 +337,17 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
         b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
 
-        logits = model.predict_sentiment(b_ids, b_mask)
+        embeddings = model.forward(b_ids, b_mask)
+        logits = model.last_layers_sentiment(embeddings)
+        
         loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
-        objects_group.loss_sum += loss_value
         
+        if args.use_smart_regularization:
+            smart_regularization(loss_value, args.smart_weight_regularization, embeddings, logits, model.last_layers_sentiment)
+
+        objects_group.loss_sum += loss_value
+
         if args.projection == "none":
             if args.use_amp: scaler.scale(loss).backward()
             else: loss.backward()
@@ -350,9 +362,14 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'], batch['attention_mask_1'], batch['token_ids_2'], batch['attention_mask_2'], batch['labels'])
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
 
-        preds = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        preds = model.last_layers_paraphrase(embeddings)
         loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum') / args.batch_size
         loss_value = loss.item()
+
+        if args.use_smart_regularization:
+            smart_regularization(loss_value, args.smart_weight_regularization, embeddings, preds, model.last_layers_paraphrase)
+
         objects_group.loss_sum += loss_value
         
         if args.projection == "none":
@@ -369,9 +386,14 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'], batch['attention_mask_1'], batch['token_ids_2'], batch['attention_mask_2'], batch['labels'])
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
 
-        preds = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        preds = model.last_layers_similarity(embeddings)
         loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
+
+        if args.use_smart_regularization:
+            smart_regularization(loss_value, args.smart_weight_regularization, embeddings, preds, model.last_layers_similarity)
+
         objects_group.loss_sum += loss_value
         
         if args.projection == "none":
@@ -785,6 +807,8 @@ def get_args():
     parser.add_argument("--projection", type=str, choices=('none', 'pcgrad', 'vaccine'), default="none")
     parser.add_argument("--beta_vaccine", type=float, default=1e-2)
     parser.add_argument("--patience", type=int, help="Number maximum of epochs without improvement", default=5)
+    parser.add_argument("--use_smart_regularization", action='store_true')
+    parser.add_argument("--smart_weight_regularization", type=float, default=1e-2)
 
     args = parser.parse_args()
 
