@@ -72,6 +72,5 @@ def createConfusionMatrix(y_true, y_pred):
     # Build confusion matrix
     cm_matrix = confusion_matrix(y_true, y_pred)
     figure = plot_confusion_matrix(cm_matrix, class_names=None)
-    cm_image = plot_to_image(figure)
 
-    return cm_image
+    return figure
