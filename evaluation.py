@@ -25,6 +25,7 @@ import os
 from datasets import load_multitask_data, load_multitask_test_data, \
     SentenceClassificationDataset, SentenceClassificationTestDataset, \
     SentencePairDataset, SentencePairTestDataset
+from tensorboard_utils import createConfusionMatrix
 
 
 TQDM_DISABLE = False
@@ -90,7 +91,7 @@ def model_eval_paraphrase(paraphrase_dataloader, model, device):
             para_sent_ids.extend(b_sent_ids)
 
         paraphrase_accuracy = np.mean(np.array(para_y_pred) == np.array(para_y_true))
-        return paraphrase_accuracy, para_y_pred, para_sent_ids
+        return paraphrase_accuracy, para_y_true, para_y_pred, para_sent_ids
 
 
 
@@ -124,7 +125,7 @@ def model_eval_sts(sts_dataloader, model, device):
             sts_sent_ids.extend(b_sent_ids)
         pearson_mat = np.corrcoef(sts_y_pred,sts_y_true)
         sts_corr = pearson_mat[1][0]
-        return sts_corr, sts_y_pred, sts_sent_ids
+        return sts_corr, sts_y_true, sts_y_pred, sts_sent_ids
 
 
 
@@ -152,7 +153,7 @@ def model_eval_sentiment(sentiment_dataloader, model, device):
             sst_sent_ids.extend(b_sent_ids)
 
         sentiment_accuracy = np.mean(np.array(sst_y_pred) == np.array(sst_y_true))
-        return sentiment_accuracy, sst_y_pred, sst_sent_ids
+        return sentiment_accuracy, sst_y_true, sst_y_pred, sst_sent_ids
 
 
 
@@ -160,10 +161,15 @@ def model_eval_sentiment(sentiment_dataloader, model, device):
 def model_eval_multitask(sentiment_dataloader,
                          paraphrase_dataloader,
                          sts_dataloader,
-                         model, device):
-    paraphrase_accuracy, para_y_pred, para_sent_ids = model_eval_paraphrase(paraphrase_dataloader, model, device)
-    sts_corr, sts_y_pred, sts_sent_ids = model_eval_sts(sts_dataloader, model, device)
-    sentiment_accuracy, sst_y_pred, sst_sent_ids = model_eval_sentiment(sentiment_dataloader, model, device)
+                         model, device, writer = None, epoch = None, tensorboard = False):
+    paraphrase_accuracy, para_y_true, para_y_pred, para_sent_ids = model_eval_paraphrase(paraphrase_dataloader, model, device)
+    sts_corr, sts_y_true, sts_y_pred, sts_sent_ids = model_eval_sts(sts_dataloader, model, device)
+    sentiment_accuracy, sst_y_true, sst_y_pred, sst_sent_ids = model_eval_sentiment(sentiment_dataloader, model, device)
+
+    if tensorboard and writer is not None:
+        writer.add_figure("Confusion matrix SST", createConfusionMatrix(sst_y_true, sst_y_pred), epoch)
+        writer.add_figure("Confusion matrix STS", createConfusionMatrix(np.round(sts_y_true,1), np.round(sts_y_pred,1)), epoch)
+        writer.add_figure("Confusion matrix Para", createConfusionMatrix(para_y_true, para_y_pred), epoch)
 
     return (paraphrase_accuracy, para_y_pred, para_sent_ids,
             sentiment_accuracy,sst_y_pred, sst_sent_ids,

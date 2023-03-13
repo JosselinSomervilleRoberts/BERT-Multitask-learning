@@ -522,7 +522,7 @@ def train_multitask(args):
                 
                 # Evaluate on dev set
                 color_score, saved = Colors.BLUE, False
-                dev_acc, _, _ = infos[task]['eval_fn'](infos[task]['dev_dataloader'], model, device)
+                dev_acc, _, _, _ = infos[task]['eval_fn'](infos[task]['dev_dataloader'], model, device)
                 if dev_acc > infos[task]['best_dev_acc']:
                     infos[task]['best_dev_acc'] = dev_acc
                     infos[task]['best_model'] = copy.deepcopy(infos[task]['layer'].state_dict())
@@ -551,9 +551,9 @@ def train_multitask(args):
         
         # Evaluate on dev set
         print(Colors.BOLD + Colors.CYAN + f'{"     Evaluation Multitask     ":-^{get_term_width()}}' + Colors.END + Colors.CYAN)
-        (paraphrase_accuracy, para_y_pred, para_sent_ids,
-            sentiment_accuracy,sst_y_pred, sst_sent_ids,
-            sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
+        (paraphrase_accuracy, _, _,
+         sentiment_accuracy, _, _,
+         sts_corr, _, _) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, writer=writer, epoch=0, tensorboard=not args.no_tensorboard)
         print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'    + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.3f}" + " " * spaces_per_task
             + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}'  + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.3f}" + " " * spaces_per_task
             + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'   + Colors.END + Colors.CYAN + f"{sts_corr:.3f}")
@@ -610,9 +610,9 @@ def train_multitask(args):
             train_loss_logs_epochs[task].append(train_loss[task])
 
         # Eval on dev
-        (paraphrase_accuracy, para_y_pred, para_sent_ids,
-        sentiment_accuracy,sst_y_pred, sst_sent_ids,
-        sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
+        (paraphrase_accuracy, _, _,
+        sentiment_accuracy,_, _,
+        sts_corr, _, _) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, writer=writer, epoch=epoch, tensorboard=not args.no_tensorboard)
         
         #We keep track of the accuracies for each task for each epoch
         dev_acc_logs_epochs['sst'].append(sentiment_accuracy)
@@ -798,7 +798,7 @@ def get_args():
         else:
             s += f" --{arg} {value}"
     print("\n" + Colors.BOLD + "Command to recreate this run:" + Colors.END + s + "\n")
-    
+
     # Saves s in args.log_dir/command.txt
     args.log_dir = writer.log_dir # Get the path of the folder where TensorBoard logs will be saved
     with open(os.path.join(args.log_dir, "command.txt"), "w") as f:
