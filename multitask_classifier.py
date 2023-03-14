@@ -639,13 +639,13 @@ def train_multitask(args, writer):
             train_loss_logs_epochs[task].append(train_loss[task])
 
         # Eval on dev
-        # (paraphrase_accuracy, _, _,
-        # sentiment_accuracy,_, _,
-        # sts_corr, _, _) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, writer=writer, epoch=epoch, tensorboard=not args.no_tensorboard)
+        (paraphrase_accuracy, _, _,
+        sentiment_accuracy,_, _,
+        sts_corr, _, _) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, writer=writer, epoch=epoch, tensorboard=not args.no_tensorboard)
         
 
         # Useful for deg
-        paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
+        #paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
 
         #We keep track of the accuracies for each task for each epoch
         dev_acc_logs_epochs['sst'].append(sentiment_accuracy)
