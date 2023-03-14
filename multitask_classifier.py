@@ -75,8 +75,6 @@ class MultitaskBERT(nn.Module):
                 param.requires_grad = True
             else:
                 param.requires_grad = False
-        bert_config = BertConfig()
-        BertModelWithPAL.from_BertModel(self.bert, bert_config)
         
         # Step 2: Add a linear layer for sentiment classification
         self.dropout_sentiment = nn.ModuleList([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
@@ -467,6 +465,8 @@ def train_multitask(args):
 
     if args.pretrained_model_name != "none":
         config = load_model(model, args.pretrained_model_name)
+    bert_config = BertConfig()
+    BertModelWithPAL.from_BertModel(model.bert, bert_config)
     model = model.to(device)
 
     lr = args.lr
