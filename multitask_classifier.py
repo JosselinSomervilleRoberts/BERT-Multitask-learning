@@ -78,8 +78,8 @@ class MultitaskBERT(nn.Module):
         super(MultitaskBERT, self).__init__()
         # You will want to add layers here to perform the downstream tasks.
         # Pretrain mode does not require updating bert paramters.
-        self.bert = BertModel.from_pretrained("bert-base-uncased")
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        self.bert = BertModel.from_pretrained("bert-large-uncased")
+        self.tokenizer = BertTokenizer.from_pretrained('bert-large-uncased')
         for param in self.bert.parameters():
             if config.option == 'finetune':
                 param.requires_grad = True
@@ -872,7 +872,7 @@ def get_args():
     parser.add_argument("--save_loss_acc_logs", type=bool, default=False)
 
     # hyper parameters
-    parser.add_argument("--batch_size", help='This is the simulated batch size using gradient accumulations', type=int, default=256)
+    parser.add_argument("--batch_size", help='This is the simulated batch size using gradient accumulations', type=int, default=128)
     parser.add_argument("--hidden_dropout_prob", type=float, default=0.2)
     parser.add_argument("--n_hidden_layers", type=int, default=2, help="Number of hidden layers for the classifier")
     parser.add_argument("--lr", type=float, help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
@@ -882,9 +882,9 @@ def get_args():
 
     # Optimizations
     parser.add_argument("--use_amp", action='store_true')
-    parser.add_argument("--max_batch_size_sst", type=int, default=64)
-    parser.add_argument("--max_batch_size_para", type=int, default=32)
-    parser.add_argument("--max_batch_size_sts", type=int, default=64)
+    parser.add_argument("--max_batch_size_sst", type=int, default=32)
+    parser.add_argument("--max_batch_size_para", type=int, default=16)
+    parser.add_argument("--max_batch_size_sts", type=int, default=32)
     parser.add_argument("--projection", type=str, choices=('none', 'pcgrad', 'vaccine'), default="none")
     parser.add_argument("--beta_vaccine", type=float, default=1e-2)
     parser.add_argument("--patience", type=int, help="Number maximum of epochs without improvement", default=5)
