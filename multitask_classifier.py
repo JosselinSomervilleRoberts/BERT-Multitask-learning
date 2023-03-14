@@ -78,8 +78,12 @@ class MultitaskBERT(nn.Module):
         super(MultitaskBERT, self).__init__()
         # You will want to add layers here to perform the downstream tasks.
         # Pretrain mode does not require updating bert paramters.
-        self.bert = BertModel.from_pretrained("bert-large-uncased")
-        self.tokenizer = BertTokenizer.from_pretrained('bert-large-uncased')
+        if args.large:
+            self.bert = BertModel.from_pretrained("bert-large-uncased")
+            self.tokenizer = BertTokenizer.from_pretrained('bert-large-uncased')
+        else:
+            self.bert = BertModel.from_pretrained("bert-base-uncased")
+            self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
         for param in self.bert.parameters():
             if config.option == 'finetune':
                 param.requires_grad = True
@@ -872,6 +876,7 @@ def get_args():
     parser.add_argument("--save_loss_acc_logs", type=bool, default=False)
 
     # hyper parameters
+    parser.add_argument("--large", action='store_true')
     parser.add_argument("--batch_size", help='This is the simulated batch size using gradient accumulations', type=int, default=128)
     parser.add_argument("--hidden_dropout_prob", type=float, default=0.2)
     parser.add_argument("--n_hidden_layers", type=int, default=2, help="Number of hidden layers for the classifier")
@@ -929,7 +934,7 @@ def get_args():
     print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = print_length, var_length = 20)
     print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = print_length, var_length = 25)
 
-    hyperparameters = ["n_hidden_layers", "batch_size", "epochs", "lr", "hidden_dropout_prob", "seed"]
+    hyperparameters = ["n_hidden_layers", "batch_size", "epochs", "lr", "hidden_dropout_prob", "seed", "large"]
     if args.option == "finetune": hyperparameters += ["num_batches_per_epoch"]
     print_subset_of_args(args, "HYPERPARAMETERS", hyperparameters, color = Colors.GREEN, print_length = print_length, var_length = 30)
     
