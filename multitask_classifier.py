@@ -88,7 +88,7 @@ class MultitaskBERT(nn.Module):
         
         # Step 2: Add a linear layer for sentiment classification
         self.dropout_sentiment = nn.ModuleList([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
-        self.linear_sentiment = nn.ModuleList([nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(config.n_hidden_layers)] + [nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)])
+        self.linear_sentiment = nn.ModuleList([nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(config.n_hidden_layers)] + [nn.Linear(BERT_HIDDEN_SIZE, 1)])
 
         # Step 3: Add a linear layer for paraphrase detection
         self.dropout_paraphrase = nn.ModuleList([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
@@ -124,9 +124,9 @@ class MultitaskBERT(nn.Module):
 
         # Step 3: Final layer
         x = self.dropout_sentiment[-1](x)
-        logits = self.linear_sentiment[-1](x)
+        preds = self.linear_sentiment[-1](x)
         # logits = F.softmax(logits, dim=1)
-        return logits
+        return preds
     
     def predict_sentiment(self, input_ids, attention_mask):
         '''Given a batch of sentences, outputs logits for classifying sentiment.
@@ -136,7 +136,14 @@ class MultitaskBERT(nn.Module):
         '''
         # Step 1: Get the BERT embeddings
         x = self.forward(input_ids, attention_mask)
-        return self.last_layers_sentiment(x)
+        pred = self.last_layers_sentiment(x)
+        
+        # Creates a tensor of zers with the size N_SENTIMENT_CLASSES
+        # Then set 1 to the index of the rounded prediction
+        #print(pred)
+        logits = torch.zeros(pred.shape[0], N_SENTIMENT_CLASSES, device=pred.device)
+        logits.scatter_(1, torch.round(pred).long(), 1)
+        return logits
 
     def get_similarity_paraphrase_embeddings(self, input_ids_1, attention_mask_1,
                            input_ids_2, attention_mask_2):
@@ -338,13 +345,13 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
 
         embeddings = model.forward(b_ids, b_mask)
-        logits = model.last_layers_sentiment(embeddings)
+        preds = model.last_layers_sentiment(embeddings)
         
-        loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+        loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
         
         if args.use_smart_regularization:
-            smart_regularization(loss_value, args.smart_weight_regularization, embeddings, logits, model.last_layers_sentiment)
+            smart_regularization(loss_value, args.smart_weight_regularization, embeddings, preds, model.last_layers_sentiment)
 
         objects_group.loss_sum += loss_value
 
@@ -451,7 +458,7 @@ def train_multitask(args, writer):
     print("")
 
     # SST: Sentiment classification
-    sst_train_data = SentenceClassificationDataset(sst_train_data, args)
+    sst_train_data = SentenceClassificationDataset(sst_train_data, args, isRegression=True)
     sst_dev_data = SentenceClassificationDataset(sst_dev_data, args)
     sst_train_dataloader = DataLoader(sst_train_data, shuffle=True, batch_size=args.batch_size_sst,
                                       collate_fn=sst_train_data.collate_fn)

@@ -25,9 +25,10 @@ def preprocess_string(s):
 
 
 class SentenceClassificationDataset(Dataset):
-    def __init__(self, dataset, args):
+    def __init__(self, dataset, args, isRegression=False):
         self.dataset = dataset
         self.p = args
+        self.isRegression = isRegression
         self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
     def __len__(self):
@@ -45,7 +46,10 @@ class SentenceClassificationDataset(Dataset):
         encoding = self.tokenizer(sents, return_tensors='pt', padding=True, truncation=True)
         token_ids = torch.LongTensor(encoding['input_ids'])
         attention_mask = torch.LongTensor(encoding['attention_mask'])
-        labels = torch.LongTensor(labels)
+        if self.isRegression:
+            labels = torch.FloatTensor(labels)
+        else:
+            labels = torch.LongTensor(labels)
 
         return token_ids, attention_mask, labels, sents, sent_ids
 
