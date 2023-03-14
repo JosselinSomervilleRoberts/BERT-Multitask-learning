@@ -520,7 +520,7 @@ def train_multitask(args, writer):
         n_batches = 0
         best_dev_acc = -np.inf
 
-        for epoch in range(args.num_epochs):
+        for epoch in range(args.epochs):
             model.train()
             for i in tqdm(range(args.num_batches_per_epoch), desc=task + ' epoch ' + str(epoch), disable=TQDM_DISABLE, smoothing=0):
                 loss = scheduler.process_named_batch(objects_group, args, name=task)
@@ -531,9 +531,9 @@ def train_multitask(args, writer):
 
             # Evaluate on dev set
             dev_acc = 0
-            if task == 'sst': dev_acc = model_eval_sentiment(sst_dev_dataloader, model, device)
-            elif task == 'para': dev_acc = model_eval_paraphrase(para_dev_dataloader, model, device)
-            elif task == 'sts': dev_acc = model_eval_sts(sts_dev_dataloader, model, device)
+            if task == 'sst': dev_acc, _, _, _ = model_eval_sentiment(sst_dev_dataloader, model, device)
+            elif task == 'para': dev_acc, _, _, _ = model_eval_paraphrase(para_dev_dataloader, model, device)
+            elif task == 'sts': dev_acc, _, _, _ = model_eval_sts(sts_dev_dataloader, model, device)
 
             color_score, saved = Colors.BLUE, True
             if dev_acc > best_dev_acc:
@@ -553,6 +553,7 @@ def train_multitask(args, writer):
                 + end_print + Colors.END)
         print("-" * terminal_width)
         print('\n\n')
+        return
 
             
 
