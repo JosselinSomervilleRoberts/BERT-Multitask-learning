@@ -19,6 +19,7 @@ from gradvac_amp import GradVacAMP
 import copy
 
 from smart_regularization import smart_regularization
+from transformers import RobertaTokenizer, RobertaModel
 
 from datasets import SentenceClassificationDataset, SentencePairDataset, \
     load_multitask_data, load_multitask_test_data
@@ -78,12 +79,22 @@ class MultitaskBERT(nn.Module):
         super(MultitaskBERT, self).__init__()
         # You will want to add layers here to perform the downstream tasks.
         # Pretrain mode does not require updating bert paramters.
-        if args.large:
+        if args.transformer == 'bert-large':
             self.bert = BertModel.from_pretrained("bert-large-uncased")
             self.tokenizer = BertTokenizer.from_pretrained('bert-large-uncased')
+            BERT_HIDDEN_SIZE = 1024
+        elif args.transformer == 'roberta-large':
+            self.bert = RobertaModel.from_pretrained("roberta-large-mnli")
+            self.tokenizer = RobertaTokenizer.from_pretrained('roberta-large-mnli')
+            BERT_HIDDEN_SIZE = 1024
+        elif args.transformer == 'roberta':
+            self.bert = RobertaModel.from_pretrained("roberta-base")
+            self.tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
+            BERT_HIDDEN_SIZE = 768
         else:
             self.bert = BertModel.from_pretrained("bert-base-uncased")
             self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+            BERT_HIDDEN_SIZE = 768
         for param in self.bert.parameters():
             if config.option == 'finetune':
                 param.requires_grad = True
@@ -876,7 +887,7 @@ def get_args():
     parser.add_argument("--save_loss_acc_logs", type=bool, default=False)
 
     # hyper parameters
-    parser.add_argument("--large", action='store_true')
+    parser.add_argument("--tranformer", type=str, choices=('bert', 'roberta', 'bert-large', 'roberta-large'), default="bert")
     parser.add_argument("--batch_size", help='This is the simulated batch size using gradient accumulations', type=int, default=128)
     parser.add_argument("--hidden_dropout_prob", type=float, default=0.2)
     parser.add_argument("--n_hidden_layers", type=int, default=2, help="Number of hidden layers for the classifier")
