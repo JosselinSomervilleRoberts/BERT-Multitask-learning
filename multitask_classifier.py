@@ -613,12 +613,12 @@ def train_multitask(args, writer):
     
     last_improv = -1
     n_batches = 0
+    first = {'sst': True, 'para': True, 'sts': True}
     for epoch in range(args.epochs):
         print(Colors.BOLD + f'{"     Epoch " + str(epoch) + "     ":-^{get_term_width()}}' + Colors.END)
         model.train()
         train_loss = {'sst': 0, 'para': 0, 'sts': 0}
         num_batches = {'sst': 0, 'para': 0, 'sts': 0}
-        first = {'sst': True, 'para': True, 'sts': True}
 
         if args.projection != "none":
             for i in tqdm(range(int(num_batches_per_epoch / 3)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
@@ -685,6 +685,14 @@ def train_multitask(args, writer):
             writer.add_scalar("[EPOCH] Num batches sst", num_batches['sst'], epoch)
             writer.add_scalar("[EPOCH] Num batches para", num_batches['para'], epoch)
             writer.add_scalar("[EPOCH] Num batches sts", num_batches['sts'], epoch)
+            if epoch == 0:
+                writer.add_scalar("Dev accuracy sst", sentiment_accuracy, 0)
+                writer.add_scalar("Dev accuracy para", paraphrase_accuracy, 0)
+                writer.add_scalar("Dev accuracy sts", sts_corr, 0)
+                writer.add_scalar("Dev accuracy mean", arithmetic_mean_acc, 0)
+                writer.add_scalar("Num batches sst", num_batches['sst'], 0)
+                writer.add_scalar("Num batches para", num_batches['para'], 0)
+                writer.add_scalar("Num batches sts", num_batches['sts'], 0)
             writer.add_scalar("Dev accuracy sst", sentiment_accuracy, epoch * args.batch_size * n_batches)
             writer.add_scalar("Dev accuracy para", paraphrase_accuracy, epoch * args.batch_size * n_batches)
             writer.add_scalar("Dev accuracy sts", sts_corr, epoch * args.batch_size * n_batches)
