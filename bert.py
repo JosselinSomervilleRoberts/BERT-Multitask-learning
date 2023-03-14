@@ -323,7 +323,11 @@ class BertModelWithPAL(BertModel):
     bert_model.__class__ = BertModelWithPAL
     bert_model.project_ups = nn.ModuleList([nn.Linear(bert_config.low_rank_size, bert_config.hidden_size) for task in range(bert_config.num_tasks)])
     bert_model.project_downs = nn.ModuleList([nn.Linear(bert_config.hidden_size, bert_config.low_rank_size) for task in range(bert_config.num_tasks)])
-    
+    # Intialize the low rank matrices to zero.
+    for project_up in bert_model.project_ups:
+      nn.init.zeros_(project_up.weight)
+    for project_down in bert_model.project_downs:
+      nn.init.zeros_(project_down.weight)
     bert_model.bert_layers = nn.ModuleList([BertLayerWithPAL.from_BertLayer(bert_layer, bert_config, project_ups=bert_model.project_ups, project_downs=bert_model.project_downs) for bert_layer in bert_model.bert_layers])
 
 
