@@ -533,7 +533,8 @@ def train_multitask(args, writer):
         infos = {'sst': {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_sentiment, 'dev_dataloader': sst_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_sentiment, 'optimizer': AdamW(model.parameters(), lr=lr), "last_improv": -1, 'first': True, 'first_loss': True},
                 'para': {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_paraphrase, 'dev_dataloader': para_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_paraphrase, 'optimizer': AdamW(model.parameters(), lr=lr), "last_improv": -1, 'first': True, 'first_loss': True},
                 'sts':  {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_sts, 'dev_dataloader': sts_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_similarity, 'optimizer': AdamW(model.parameters(), lr=lr), "last_improv": -1, 'first': True, 'first_loss': True}}
-                 
+        total_num_batches = {'sst': 0, 'para': 0, 'sts': 0}
+
         for epoch in range(args.epochs):
             print(Colors.BOLD + f'{"Epoch " + str(epoch):^{get_term_width()}}' + Colors.END)
             for task in ['sst', 'sts', 'para']:
@@ -545,12 +546,14 @@ def train_multitask(args, writer):
                 terminal_width = get_term_width()
                 for i in tqdm(range(infos[task]['num_batches']), desc=task + ' epoch ' + str(epoch), disable=TQDM_DISABLE, smoothing=0):
                     loss = scheduler.process_named_batch(name=task, objects_group=objects_group, args=args)
+                    total_num_batches[task] += 1
                     n_batches += 1
                     if not args.no_tensorboard:
                         if infos[task]['first']:
                             writer.add_scalar("Loss " + task, loss.item(), 0)
                             infos[task]['first'] = False
                         writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
+                        writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * total_num_batches[task])
                 
                 # Evaluate on dev set
                 color_score, saved = Colors.BLUE, False
@@ -565,7 +568,7 @@ def train_multitask(args, writer):
                     if infos[task]['first_loss']:
                         infos[task]['first_loss'] = False
                         writer.add_scalar("Dev accuracy " + task, dev_acc, 0)
-                    writer.add_scalar("Dev accuracy " + task, dev_acc, args.batch_size_sts * n_batches)
+                    writer.add_scalar("Dev accuracy " + task, dev_acc, args.batch_size * n_batches)
                 
                 # Print dev accuracy
                 spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
@@ -613,12 +616,20 @@ def train_multitask(args, writer):
     
     last_improv = -1
     n_batches = 0
+    total_num_batches = {'sst': 0, 'para': 0, 'sts': 0}
+
+    # Initial losses
+    if not args.no_tensorboard:
+        for name in ['sst', 'sts', 'para']:
+            loss = scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=False)
+            writer.add_scalar("Loss " + name, loss.item(), 0)
+            writer.add_scalar("Specific Loss " + name, loss.item(), 0)
+
     for epoch in range(args.epochs):
         print(Colors.BOLD + f'{"     Epoch " + str(epoch) + "     ":-^{get_term_width()}}' + Colors.END)
         model.train()
         train_loss = {'sst': 0, 'para': 0, 'sts': 0}
         num_batches = {'sst': 0, 'para': 0, 'sts': 0}
-        first = {'sst': True, 'para': True, 'sts': True}
 
         if args.projection != "none":
             for i in tqdm(range(int(num_batches_per_epoch / 3)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
@@ -627,12 +638,11 @@ def train_multitask(args, writer):
                     losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=False))
                     n_batches += 1
                     train_loss[name] += losses[-1].item()
-                    if not args.no_tensorboard:
-                        if first[name]:
-                            writer.add_scalar("Loss " + name, losses[-1].item(), 0)
-                            first[name] = False
-                        writer.add_scalar("Loss " + name, losses[-1].item(), args.batch_size * n_batches)
                     num_batches[name] += 1
+                    total_num_batches[name] += 1
+                    if not args.no_tensorboard:
+                        writer.add_scalar("Loss " + name, losses[-1].item(), args.batch_size * n_batches)
+                        writer.add_scalar("Specific Loss " + name, losses[-1].item(), args.batch_size * total_num_batches[name])
                 optimizer.backward(losses)
                 optimizer.step()
         else:
@@ -640,12 +650,11 @@ def train_multitask(args, writer):
                 task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
                 n_batches += 1
                 train_loss[task] += loss.item()
-                if not args.no_tensorboard:
-                    if first[task]:
-                        writer.add_scalar("Loss " + task, loss.item(), 0)
-                        first[task] = False
-                    writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
                 num_batches[task] += 1
+                total_num_batches[task] += 1
+                if not args.no_tensorboard:
+                    writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
+                    writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * total_num_batches[task])
 
         # Compute average train loss
         for task in train_loss:
@@ -685,13 +694,21 @@ def train_multitask(args, writer):
             writer.add_scalar("[EPOCH] Num batches sst", num_batches['sst'], epoch)
             writer.add_scalar("[EPOCH] Num batches para", num_batches['para'], epoch)
             writer.add_scalar("[EPOCH] Num batches sts", num_batches['sts'], epoch)
-            writer.add_scalar("Dev accuracy sst", sentiment_accuracy, epoch * args.batch_size * n_batches)
-            writer.add_scalar("Dev accuracy para", paraphrase_accuracy, epoch * args.batch_size * n_batches)
-            writer.add_scalar("Dev accuracy sts", sts_corr, epoch * args.batch_size * n_batches)
-            writer.add_scalar("Dev accuracy mean", arithmetic_mean_acc, epoch * args.batch_size * n_batches)
-            writer.add_scalar("Num batches sst", num_batches['sst'], epoch * args.batch_size * n_batches)
-            writer.add_scalar("Num batches para", num_batches['para'], epoch * args.batch_size * n_batches)
-            writer.add_scalar("Num batches sts", num_batches['sts'], epoch * args.batch_size * n_batches)
+            if epoch == 0:
+                writer.add_scalar("Dev accuracy sst", sentiment_accuracy, 0)
+                writer.add_scalar("Dev accuracy para", paraphrase_accuracy, 0)
+                writer.add_scalar("Dev accuracy sts", sts_corr, 0)
+                writer.add_scalar("Dev accuracy mean", arithmetic_mean_acc, 0)
+                writer.add_scalar("Num batches sst", num_batches['sst'], 0)
+                writer.add_scalar("Num batches para", num_batches['para'], 0)
+                writer.add_scalar("Num batches sts", num_batches['sts'], 0)
+            writer.add_scalar("Dev accuracy sst", sentiment_accuracy, args.batch_size * n_batches)
+            writer.add_scalar("Dev accuracy para", paraphrase_accuracy, args.batch_size * n_batches)
+            writer.add_scalar("Dev accuracy sts", sts_corr, args.batch_size * n_batches)
+            writer.add_scalar("Dev accuracy mean", arithmetic_mean_acc, args.batch_size * n_batches)
+            writer.add_scalar("Num batches sst", num_batches['sst'], args.batch_size * n_batches)
+            writer.add_scalar("Num batches para", num_batches['para'], args.batch_size * n_batches)
+            writer.add_scalar("Num batches sts", num_batches['sts'], args.batch_size * n_batches)
 
         # Saves model if it is the best one so far on the dev set
         color_score, saved = Colors.BLUE, False
