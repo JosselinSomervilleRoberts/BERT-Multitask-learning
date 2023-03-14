@@ -527,20 +527,30 @@ def train_multitask(args, writer):
     # At the end, we load the best state for each task and evaluate the model on the dev set (multitask)
 
     if args.option == 'individual_pretrain':
+        n_batches = 0
+        num_batches_per_epoch = args.num_batches_per_epoch if args.num_batches_per_epoch > 0 else len(sst_train_dataloader)
         # Dict to train each task separately
-        infos = {'sst': {'num_batches': len(sst_train_dataloader), 'eval_fn': model_eval_sentiment, 'dev_dataloader': sst_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_sentiment},
-                'para': {'num_batches': len(para_train_dataloader), 'eval_fn': model_eval_paraphrase, 'dev_dataloader': para_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_paraphrase},
-                'sts':  {'num_batches': len(sts_train_dataloader), 'eval_fn': model_eval_sts, 'dev_dataloader': sts_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_similarity}}
-        
-        for task in ['sst', 'sts', 'para']:
-            optimizer = AdamW(model.parameters(), lr=lr)
-            terminal_width = get_term_width()
-            last_improv = -1
-            print(Colors.BOLD + f'{"     Individually Pretraining " + task + "     ":-^{get_term_width()}}' + Colors.END)
-            for epoch in range(args.epochs):
+        infos = {'sst': {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_sentiment, 'dev_dataloader': sst_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_sentiment, 'optimizer': AdamW(model.parameters(), lr=lr), "last_improv": -1, 'first': True, 'first_loss': True},
+                'para': {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_paraphrase, 'dev_dataloader': para_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_paraphrase, 'optimizer': AdamW(model.parameters(), lr=lr), "last_improv": -1, 'first': True, 'first_loss': True},
+                'sts':  {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_sts, 'dev_dataloader': sts_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_similarity, 'optimizer': AdamW(model.parameters(), lr=lr), "last_improv": -1, 'first': True, 'first_loss': True}}
+                 
+        for epoch in range(args.epochs):
+            print(Colors.BOLD + f'{"Epoch " + str(epoch):^{get_term_width()}}' + Colors.END)
+            for task in ['sst', 'sts', 'para']:
+                if epoch - infos[task]['last_improv'] > args.patience:
+                    print(Colors.BOLD + Colors.RED + f'{"Early stopping " + task:^{get_term_width()}}' + Colors.END)
+                    continue
+                model.train()
+                objects_group.optimizer = infos[task]['optimizer']
+                terminal_width = get_term_width()
                 for i in tqdm(range(infos[task]['num_batches']), desc=task + ' epoch ' + str(epoch), disable=TQDM_DISABLE, smoothing=0):
                     loss = scheduler.process_named_batch(name=task, objects_group=objects_group, args=args)
-                    if not args.no_tensorboard: writer.add_scalar("Loss pretrain " + task, loss.item(), args.batch_size * (epoch * infos[task]['num_batches'] + i))
+                    n_batches += 1
+                    if not args.no_tensorboard:
+                        if infos[task]['first']:
+                            writer.add_scalar("Loss " + task, loss.item(), 0)
+                            infos[task]['first'] = False
+                        writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
                 
                 # Evaluate on dev set
                 color_score, saved = Colors.BLUE, False
@@ -549,9 +559,13 @@ def train_multitask(args, writer):
                     infos[task]['best_dev_acc'] = dev_acc
                     infos[task]['best_model'] = copy.deepcopy(infos[task]['layer'].state_dict())
                     color_score, saved = Colors.PURPLE, True
-                    last_improv = epoch
-                if not args.no_tensorboard: writer.add_scalar("[EPOCH] Dev accuracy " + task, dev_acc, epoch)
-                if not args.no_tensorboard: writer.add_scalar("Dev accuracy " + task, dev_acc, epoch * args.batch_size_sts * infos[task]['num_batches'])
+                    infos[task]['last_improv'] = epoch
+                if not args.no_tensorboard: 
+                    writer.add_scalar("[EPOCH] Dev accuracy " + task, dev_acc, epoch)
+                    if infos[task]['first_loss']:
+                        infos[task]['first_loss'] = False
+                        writer.add_scalar("Dev accuracy " + task, dev_acc, 0)
+                    writer.add_scalar("Dev accuracy " + task, dev_acc, args.batch_size_sts * n_batches)
                 
                 # Print dev accuracy
                 spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
@@ -559,11 +573,6 @@ def train_multitask(args, writer):
                 print(Colors.BOLD + color_score + f'{"Cur acc dev: ":<20}'   + Colors.END + color_score + f"{dev_acc:.3f}" + " " * spaces_per_task
                     + Colors.BOLD + color_score + f'{" Best acc dev: ":<20}' + Colors.END + color_score + f"{infos[task]['best_dev_acc']:.3f}"
                     + end_print + Colors.END)
-
-                if epoch != args.epochs - 1: print("")
-                elif epoch - last_improv >= args.patience:
-                    print(Colors.BOLD + Colors.RED + f'{"Early stopping":^{get_term_width()}}' + Colors.END)
-                    break
             print("-" * terminal_width)
             print('\n\n')
 
@@ -603,27 +612,39 @@ def train_multitask(args, writer):
                                 int(len(sts_train_dataloader) / args.gradient_accumulations_sts)
     
     last_improv = -1
+    n_batches = 0
     for epoch in range(args.epochs):
         print(Colors.BOLD + f'{"     Epoch " + str(epoch) + "     ":-^{get_term_width()}}' + Colors.END)
         model.train()
         train_loss = {'sst': 0, 'para': 0, 'sts': 0}
         num_batches = {'sst': 0, 'para': 0, 'sts': 0}
+        first = {'sst': True, 'para': True, 'sts': True}
 
         if args.projection != "none":
             for i in tqdm(range(int(num_batches_per_epoch / 3)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
                 losses = []
                 for j, name in enumerate(['sst', 'sts', 'para']):
                     losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=False))
+                    n_batches += 1
                     train_loss[name] += losses[-1].item()
-                    if not args.no_tensorboard: writer.add_scalar("Loss " + args.option + " " + name, losses[-1].item(), args.batch_size * (epoch * num_batches_per_epoch + 3 * i + j))
+                    if not args.no_tensorboard:
+                        if first[name]:
+                            writer.add_scalar("Loss " + name, losses[-1].item(), 0)
+                            first[name] = False
+                        writer.add_scalar("Loss " + name, losses[-1].item(), args.batch_size * n_batches)
                     num_batches[name] += 1
                 optimizer.backward(losses)
                 optimizer.step()
         else:
             for i in tqdm(range(num_batches_per_epoch), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
                 task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
+                n_batches += 1
                 train_loss[task] += loss.item()
-                if not args.no_tensorboard: writer.add_scalar("Loss " + args.option + " " + task, loss.item(), args.batch_size * (epoch * num_batches_per_epoch + i))
+                if not args.no_tensorboard:
+                    if first[task]:
+                        writer.add_scalar("Loss " + task, loss.item(), 0)
+                        first[task] = False
+                    writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
                 num_batches[task] += 1
 
         # Compute average train loss
@@ -632,13 +653,12 @@ def train_multitask(args, writer):
             train_loss_logs_epochs[task].append(train_loss[task])
 
         # Eval on dev
-        # (paraphrase_accuracy, _, _,
-        # sentiment_accuracy,_, _,
-        # sts_corr, _, _) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, writer=writer, epoch=epoch, tensorboard=not args.no_tensorboard)
-        
+        (paraphrase_accuracy, _, _,
+        sentiment_accuracy,_, _,
+        sts_corr, _, _) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, writer=writer, epoch=epoch, tensorboard=not args.no_tensorboard)
 
         # Useful for deg
-        paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
+        # paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
 
         #We keep track of the accuracies for each task for each epoch
         dev_acc_logs_epochs['sst'].append(sentiment_accuracy)
@@ -665,13 +685,13 @@ def train_multitask(args, writer):
             writer.add_scalar("[EPOCH] Num batches sst", num_batches['sst'], epoch)
             writer.add_scalar("[EPOCH] Num batches para", num_batches['para'], epoch)
             writer.add_scalar("[EPOCH] Num batches sts", num_batches['sts'], epoch)
-            writer.add_scalar("Dev accuracy sst", sentiment_accuracy, epoch * args.batch_size * num_batches_per_epoch)
-            writer.add_scalar("Dev accuracy para", paraphrase_accuracy, epoch * args.batch_size * num_batches_per_epoch)
-            writer.add_scalar("Dev accuracy sts", sts_corr, epoch * args.batch_size * num_batches_per_epoch)
-            writer.add_scalar("Dev accuracy mean", arithmetic_mean_acc, epoch * args.batch_size * num_batches_per_epoch)
-            writer.add_scalar("Num batches sst", num_batches['sst'], epoch * args.batch_size * num_batches_per_epoch)
-            writer.add_scalar("Num batches para", num_batches['para'], epoch * args.batch_size * num_batches_per_epoch)
-            writer.add_scalar("Num batches sts", num_batches['sts'], epoch * args.batch_size * num_batches_per_epoch)
+            writer.add_scalar("Dev accuracy sst", sentiment_accuracy, epoch * args.batch_size * n_batches)
+            writer.add_scalar("Dev accuracy para", paraphrase_accuracy, epoch * args.batch_size * n_batches)
+            writer.add_scalar("Dev accuracy sts", sts_corr, epoch * args.batch_size * n_batches)
+            writer.add_scalar("Dev accuracy mean", arithmetic_mean_acc, epoch * args.batch_size * n_batches)
+            writer.add_scalar("Num batches sst", num_batches['sst'], epoch * args.batch_size * n_batches)
+            writer.add_scalar("Num batches para", num_batches['para'], epoch * args.batch_size * n_batches)
+            writer.add_scalar("Num batches sts", num_batches['sts'], epoch * args.batch_size * n_batches)
 
         # Saves model if it is the best one so far on the dev set
         color_score, saved = Colors.BLUE, False
@@ -895,8 +915,6 @@ def get_args():
             warn("Pretraining mode does not support task scheduler (Each task is trained separately)")
         if args.projection != "none":
             warn("Pretraining mode does not support projection (Each task is trained separately)")
-        if args.num_batches_per_epoch != -1:
-            warn("Pretraining mode does not support num_batches_per_epoch (One peoch is a full pass through the dataset)")
         if args.beta_vaccine != 1e-2:
             warn("Pretraining mode does not support beta_vaccine (Each task is trained separately)")
         
