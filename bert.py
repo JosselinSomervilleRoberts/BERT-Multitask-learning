@@ -89,21 +89,23 @@ class BertSelfAttention(nn.Module):
 # This adds a low rank attention mechanism per task to the original BERT self-attention layer
 
 class TaskSpecificAttention(nn.Module):
-  def __init__(self, config, perform_initial_init=False):
+  def __init__(self, config, project_up = None, project_down = None, perform_initial_init=False):
     super().__init__()
     #print("Creating project down layer with hidden size", config.hidden_size, "and low rank size", config.low_rank_size)
-    self.project_down = nn.Linear(config.hidden_size, config.low_rank_size)
-    self.project_up = nn.Linear(config.low_rank_size, config.hidden_size)
+    self.project_down = nn.Linear(config.hidden_size, config.low_rank_size) if project_down is None else project_down
+    self.project_up = nn.Linear(config.low_rank_size, config.hidden_size) if project_up is None else project_up
     config_self_attention = copy.deepcopy(config)
     config_self_attention.hidden_size = config.low_rank_size
     self.attention = BertSelfAttention(config_self_attention, init_to_identity=perform_initial_init)
 
     # Intialize the weight of project_down, project_up such that the self-attention is the zero function
     if perform_initial_init:
-      self.project_down.weight.data.zero_()
-      self.project_down.bias.data.zero_()
-      self.project_up.weight.data.zero_()
-      self.project_up.bias.data.zero_()
+      if project_down is None:
+        self.project_down.weight.data.zero_()
+        self.project_down.bias.data.zero_()
+      if project_up is None:
+        self.project_up.weight.data.zero_()
+        self.project_up.bias.data.zero_()
 
   def forward(self, hidden_states, attention_mask):
     """
@@ -179,11 +181,13 @@ class BertLayer(nn.Module):
 
 
 class BertLayerWithPAL(BertLayer):
-  def __init__(self, config):
+  def __init__(self, config, project_ups = None, project_downs = None):
     super().__init__(config)
     
     # Task-specific attention
-    self.task_attention = nn.ModuleList([TaskSpecificAttention(config) for task in range(config.num_tasks)])
+    self.project_ups = nn.ModuleList([nn.Linear(config.low_rank_size, config.hidden_size) for task in range(config.num_tasks)]) if project_ups is None else project_ups
+    self.project_downs = nn.ModuleList([nn.Linear(config.hidden_size, config.low_rank_size) for task in range(config.num_tasks)]) if project_downs is None else project_downs
+    self.task_attention = nn.ModuleList([TaskSpecificAttention(config, project_up=self.project_ups[task], project_down=self.project_downs[task]) for task in range(config.num_tasks)])
 
 
   def forward(self, hidden_states, attention_mask, task_id):
@@ -202,7 +206,7 @@ class BertLayerWithPAL(BertLayer):
     #print("output", output.shape)
     return output
 
-  def from_BertLayer(bert_layer, config):
+  def from_BertLayer(bert_layer, config, project_ups = None, project_downs = None):
     """
     this function is used to convert a BertLayer to BertLayerWithPAL
     bert_layer: BertLayer
@@ -213,7 +217,7 @@ class BertLayerWithPAL(BertLayer):
     # pal_layer = BertLayerWithPAL.from_BertLayer(bert_layer, config)
     bert_layer.__class__ = BertLayerWithPAL
     #print(config.low_rank_size)
-    bert_layer.task_attention = nn.ModuleList([TaskSpecificAttention(config, perform_initial_init=True) for task in range(config.num_tasks)])
+    bert_layer.task_attention = nn.ModuleList([TaskSpecificAttention(config, project_up=project_ups[task], project_down=project_downs[task], perform_initial_init=True) for task in range(config.num_tasks)])
     
     for param in bert_layer.task_attention.parameters():
       param.requires_grad = True
@@ -317,7 +321,10 @@ class BertModelWithPAL(BertModel):
 
   def from_BertModel(bert_model, bert_config):
     bert_model.__class__ = BertModelWithPAL
-    bert_model.bert_layers = nn.ModuleList([BertLayerWithPAL.from_BertLayer(bert_layer, bert_config) for bert_layer in bert_model.bert_layers])
+    bert_model.project_ups = nn.ModuleList([nn.Linear(bert_config.low_rank_size, bert_config.hidden_size) for task in range(bert_config.num_tasks)])
+    bert_model.project_downs = nn.ModuleList([nn.Linear(bert_config.hidden_size, bert_config.low_rank_size) for task in range(bert_config.num_tasks)])
+    
+    bert_model.bert_layers = nn.ModuleList([BertLayerWithPAL.from_BertLayer(bert_layer, bert_config, project_ups=bert_model.project_ups, project_downs=bert_model.project_downs) for bert_layer in bert_model.bert_layers])
 
 
   def encode(self, hidden_states, attention_mask, task_id):
