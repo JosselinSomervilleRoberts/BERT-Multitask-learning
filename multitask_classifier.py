@@ -513,6 +513,48 @@ def train_multitask(args, writer):
         scheduler = PalScheduler(dataloaders)
     elif args.task_scheduler == 'random':
         scheduler = RandomScheduler(dataloaders)
+    elif args.task_scheduler in ['sts', 'sst', 'para']:
+        # If we are using a single task, we don't need a scheduler
+        scheduler = RandomScheduler(dataloaders)
+        task = args.task_scheduler
+        n_batches = 0
+        best_dev_acc = -np.inf
+
+        for epoch in range(args.num_epochs):
+            model.train()
+            for i in tqdm(range(args.num_batches_per_epoch), desc=task + ' epoch ' + str(epoch), disable=TQDM_DISABLE, smoothing=0):
+                loss = scheduler.process_named_batch(objects_group, args, name=task)
+                n_batches += 1
+                if not args.no_tensorboard:
+                    writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
+                    writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * n_batches)
+
+            # Evaluate on dev set
+            dev_acc = 0
+            if task == 'sst': dev_acc = model_eval_sentiment(sst_dev_dataloader, model, device)
+            elif task == 'para': dev_acc = model_eval_paraphrase(para_dev_dataloader, model, device)
+            elif task == 'sts': dev_acc = model_eval_sts(sts_dev_dataloader, model, device)
+
+            color_score, saved = Colors.BLUE, True
+            if dev_acc > best_dev_acc:
+                best_dev_acc = dev_acc
+                saved_path = save_model(model, optimizer, args, config, args.filepath)
+                color_score, saved = Colors.PURPLE, True
+
+            if not args.no_tensorboard:
+                writer.add_scalar("Dev Acc " + task, dev_acc, args.batch_size * n_batches)
+
+            # Print dev accuracy
+            terminal_width = get_term_width()
+            spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
+            end_print = f'{"Saved":>{25 + spaces_per_task}}' if saved else ""
+            print(Colors.BOLD + color_score + f'{"Cur acc dev: ":<20}'   + Colors.END + color_score + f"{dev_acc:.3f}" + " " * spaces_per_task
+                + Colors.BOLD + color_score + f'{" Best acc dev: ":<20}' + Colors.END + color_score + f"{best_dev_acc:.3f}"
+                + end_print + Colors.END)
+        print("-" * terminal_width)
+        print('\n\n')
+
+            
 
 
     # Loss logs
@@ -835,7 +877,7 @@ def get_args():
     parser.add_argument("--lr", type=float, help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
                         default=1e-5)
     parser.add_argument("--num_batches_per_epoch", type=int, default=-1)
-    parser.add_argument("--task_scheduler", type=str, choices=('random', 'round_robin', 'pal'), default="round_robin")
+    parser.add_argument("--task_scheduler", type=str, choices=('random', 'round_robin', 'pal', 'para', 'sts', 'sst'), default="round_robin")
 
     # Optimizations
     parser.add_argument("--use_amp", action='store_true')
