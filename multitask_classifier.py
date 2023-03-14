@@ -534,15 +534,14 @@ def train_multitask(args, writer):
                 'para': {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_paraphrase, 'dev_dataloader': para_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_paraphrase, 'optimizer': AdamW(model.parameters(), lr=lr), "last_improv": -1, 'first': True, 'first_loss': True},
                 'sts':  {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_sts, 'dev_dataloader': sts_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_similarity, 'optimizer': AdamW(model.parameters(), lr=lr), "last_improv": -1, 'first': True, 'first_loss': True}}
                  
-        
-        for task in ['sst', 'sts', 'para']:
-            objects_group.optimizer = AdamW(model.parameters(), lr=lr)#infos[task]['optimizer']
-            for epoch in range(args.epochs):
-                print(Colors.BOLD + f'{"Epoch " + str(epoch):^{get_term_width()}}' + Colors.END)
+        for epoch in range(args.epochs):
+            print(Colors.BOLD + f'{"Epoch " + str(epoch):^{get_term_width()}}' + Colors.END)
+            for task in ['sst', 'sts', 'para']:
                 if epoch - infos[task]['last_improv'] > args.patience:
                     print(Colors.BOLD + Colors.RED + f'{"Early stopping " + task:^{get_term_width()}}' + Colors.END)
                     continue
-                #model.train()
+                model.train()
+                objects_group.optimizer = infos[task]['optimizer']
                 terminal_width = get_term_width()
                 for i in tqdm(range(infos[task]['num_batches']), desc=task + ' epoch ' + str(epoch), disable=TQDM_DISABLE, smoothing=0):
                     loss = scheduler.process_named_batch(name=task, objects_group=objects_group, args=args)
