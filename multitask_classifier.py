@@ -55,7 +55,7 @@ def seed_everything(seed=11711):
     torch.backends.cudnn.deterministic = True
 
 
-BERT_HIDDEN_SIZE = 768
+BERT_HIDDEN_SIZE = 1024
 N_SENTIMENT_CLASSES = 5
 N_STS_CLASSES = 6
 
