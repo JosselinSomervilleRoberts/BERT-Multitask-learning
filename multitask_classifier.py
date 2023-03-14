@@ -887,7 +887,7 @@ def get_args():
     parser.add_argument("--save_loss_acc_logs", type=bool, default=False)
 
     # hyper parameters
-    parser.add_argument("--tranformer", type=str, choices=('bert', 'roberta', 'bert-large', 'roberta-large'), default="bert")
+    parser.add_argument("--transformer", type=str, choices=('bert', 'roberta', 'bert-large', 'roberta-large'), default="bert")
     parser.add_argument("--batch_size", help='This is the simulated batch size using gradient accumulations', type=int, default=128)
     parser.add_argument("--hidden_dropout_prob", type=float, default=0.2)
     parser.add_argument("--n_hidden_layers", type=int, default=2, help="Number of hidden layers for the classifier")
