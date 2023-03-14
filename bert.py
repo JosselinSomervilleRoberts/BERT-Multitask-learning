@@ -8,7 +8,7 @@ from utils import *
 
 
 class BertSelfAttention(nn.Module):
-  def __init__(self, config):
+  def __init__(self, config, init_to_identity=False):
     super().__init__()
 
     self.num_attention_heads = config.num_attention_heads
@@ -22,6 +22,18 @@ class BertSelfAttention(nn.Module):
     # this dropout is applied to normalized attention scores following the original implementation of transformer
     # although it is a bit unusual, we empirically observe that it yields better performance
     self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
+
+    # Intialize the weight of query, key, value such that the self-attention is the identity function
+    if init_to_identity:
+      # initialize the linear transformation layers for key, value, query
+      self.query.weight.data.zero_()
+      self.query.bias.data.fill_(1.0 / math.sqrt(self.attention_head_size))
+
+      self.key.weight.data.zero_()
+      self.key.bias.data.fill_(1.0 / math.sqrt(self.attention_head_size))
+
+      self.value.weight.data.zero_()
+      self.value.bias.data.fill_(1.0 / math.sqrt(self.attention_head_size))
 
   def transform(self, x, linear_layer):
     # the corresponding linear_layer of k, v, q are used to project the hidden_state (x)
@@ -77,14 +89,21 @@ class BertSelfAttention(nn.Module):
 # This adds a low rank attention mechanism per task to the original BERT self-attention layer
 
 class TaskSpecificAttention(nn.Module):
-  def __init__(self, config):
+  def __init__(self, config, perform_initial_init=False):
     super().__init__()
     #print("Creating project down layer with hidden size", config.hidden_size, "and low rank size", config.low_rank_size)
     self.project_down = nn.Linear(config.hidden_size, config.low_rank_size)
     self.project_up = nn.Linear(config.low_rank_size, config.hidden_size)
     config_self_attention = copy.deepcopy(config)
     config_self_attention.hidden_size = config.low_rank_size
-    self.attention = BertSelfAttention(config_self_attention)
+    self.attention = BertSelfAttention(config_self_attention, init_to_identity=perform_initial_init)
+
+    # Intialize the weight of project_down, project_up such that the self-attention is the zero function
+    if perform_initial_init:
+      self.project_down.weight.data.zero_()
+      self.project_down.bias.data.zero_()
+      self.project_up.weight.data.zero_()
+      self.project_up.bias.data.zero_()
 
   def forward(self, hidden_states, attention_mask):
     """
@@ -194,7 +213,7 @@ class BertLayerWithPAL(BertLayer):
     # pal_layer = BertLayerWithPAL.from_BertLayer(bert_layer, config)
     bert_layer.__class__ = BertLayerWithPAL
     #print(config.low_rank_size)
-    bert_layer.task_attention = nn.ModuleList([TaskSpecificAttention(config) for task in range(config.num_tasks)])
+    bert_layer.task_attention = nn.ModuleList([TaskSpecificAttention(config, perform_initial_init=True) for task in range(config.num_tasks)])
     
     for param in bert_layer.task_attention.parameters():
       param.requires_grad = True

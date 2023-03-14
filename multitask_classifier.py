@@ -91,6 +91,13 @@ class MultitaskBERT(nn.Module):
         self.dropout_similarity = nn.ModuleList([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
         self.linear_similarity = nn.ModuleList([nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(config.n_hidden_layers)] + [nn.Linear(BERT_HIDDEN_SIZE, 1)])
 
+        if args.no_train_classifier:
+            for param in self.linear_sentiment.parameters():
+                param.requires_grad = False
+            for param in self.linear_paraphrase.parameters():
+                param.requires_grad = False
+            for param in self.linear_similarity.parameters():
+                param.requires_grad = False
 
     def forward(self, input_ids, attention_mask, task_id):
         'Takes a batch of sentences and produces embeddings for them.'
@@ -726,6 +733,7 @@ def get_args():
     parser.add_argument("--task_scheduler", type=str, choices=('random', 'round_robin', 'pal'), default="round_robin")
 
     # Optimizations
+    parser.add_argument("--no_train_classifier", action='store_true')
     parser.add_argument("--use_amp", action='store_true')
     parser.add_argument("--max_batch_size_sst", type=int, default=64)
     parser.add_argument("--max_batch_size_para", type=int, default=32)
