@@ -616,8 +616,15 @@ def train_multitask(args, writer):
     
     last_improv = -1
     n_batches = 0
-    first = {'sst': True, 'para': True, 'sts': True}
     total_num_batches = {'sst': 0, 'para': 0, 'sts': 0}
+
+    # Initial losses
+    if not args.no_tensorboard:
+        for name in ['sst', 'sts', 'para']:
+            loss = scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=False)
+            writer.add_scalar("Loss " + name, loss.item(), 0)
+            writer.add_scalar("Specific Loss " + name, loss.item(), 0)
+
     for epoch in range(args.epochs):
         print(Colors.BOLD + f'{"     Epoch " + str(epoch) + "     ":-^{get_term_width()}}' + Colors.END)
         model.train()
@@ -634,9 +641,6 @@ def train_multitask(args, writer):
                     num_batches[name] += 1
                     total_num_batches[name] += 1
                     if not args.no_tensorboard:
-                        if first[name]:
-                            writer.add_scalar("Loss " + name, losses[-1].item(), 0)
-                            first[name] = False
                         writer.add_scalar("Loss " + name, losses[-1].item(), args.batch_size * n_batches)
                         writer.add_scalar("Specific Loss " + name, losses[-1].item(), args.batch_size * total_num_batches[name])
                 optimizer.backward(losses)
@@ -649,9 +653,6 @@ def train_multitask(args, writer):
                 num_batches[task] += 1
                 total_num_batches[task] += 1
                 if not args.no_tensorboard:
-                    if first[task]:
-                        writer.add_scalar("Loss " + task, loss.item(), 0)
-                        first[task] = False
                     writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
                     writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * total_num_batches[task])
 
