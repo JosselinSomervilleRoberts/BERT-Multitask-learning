@@ -721,7 +721,7 @@ def train_multitask(args, writer):
                     nb_batches_per_update = 16
                     losses = {'sst': 0, 'para': 0, 'sts': 0}
                     for i in tqdm(range(int(num_batches_per_epoch / nb_batches_per_update)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
-                        for task in enumerate(['sst', 'sts', 'para']):
+                        for task in ['sst', 'sts', 'para']:
                             losses[task] += scheduler.process_named_batch(objects_group=objects_group, args=args, name=task, apply_optimization=False)
                             num_batches[task] += 1
                         for j in range(nb_batches_per_update - 3):
