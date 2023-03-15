@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from bert import BertModel
-from tokenizer import BertTokenizer
+from preprocessing.tokenizer import BertTokenizer
 from optimizer import AdamW
 from torch.cuda.amp import GradScaler, autocast
 from contextlib import nullcontext
@@ -18,10 +18,12 @@ from pcgrad_amp import PCGradAMP
 from gradvac_amp import GradVacAMP
 import copy
 
+
 from smart_regularization import smart_regularization
 from transformers import RobertaTokenizer, RobertaModel
 
-from datasets import SentenceClassificationDataset, SentencePairDataset, \
+from preprocessing.datasets import SentenceClassificationDataset, SentencePairDataset, \
+
     load_multitask_data, load_multitask_test_data
 
 from evaluation import model_eval_multitask, test_model_multitask, \
@@ -460,7 +462,8 @@ def save_model(model, optimizer, args, config, filepath):
 def train_multitask(args, writer):
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
     # Load data
-    # Create the data and its corresponding datasets and dataloader
+    # Create the data and its corresponding datasets and dataloaders
+
     sst_train_data, num_labels,para_train_data, sts_train_data = load_multitask_data(args.sst_train,args.para_train,args.sts_train, split ='train')
     sst_dev_data, num_labels,para_dev_data, sts_dev_data = load_multitask_data(args.sst_dev,args.para_dev,args.sts_dev, split ='train')
     print("")
@@ -904,11 +907,18 @@ def get_args():
     parser.add_argument("--projection", type=str, choices=('none', 'pcgrad', 'vaccine'), default="none")
     parser.add_argument("--beta_vaccine", type=float, default=1e-2)
     parser.add_argument("--patience", type=int, help="Number maximum of epochs without improvement", default=5)
+    parser.add_argument("--use_preprocessing_lengths", action='store_true')
     parser.add_argument("--use_smart_regularization", action='store_true')
     parser.add_argument("--smart_weight_regularization", type=float, default=1e-2)
 
     args = parser.parse_args()
 
+    # Set the preprocessed training datasets
+    if args.use_preprocessing_lengths:
+        args.sst_train = "data/preprocessed_data/preprocessed-ids-sst-train.csv"
+        args.para_train = "data/preprocessed_data/preprocessed-quora-train.csv"
+        args.sts_train = "data/preprocessed_data/preprocessed-sts-train.csv"
+        
     # Logs the command to recreate the same run with all the arguments
     s = "python3 multitask_classifier.py"
     for arg in vars(args):
@@ -929,6 +939,7 @@ def get_args():
     args.log_dir = writer.log_dir # Get the path of the folder where TensorBoard logs will be saved
     with open(os.path.join(args.log_dir, "command.txt"), "w") as f:
         f.write(s)
+
 
     # Makes sure that the actual batch sizes are not too large
     # Gradient accumulations are used to simulate larger batch sizes

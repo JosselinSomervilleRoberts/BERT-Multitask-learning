@@ -22,7 +22,7 @@ from tqdm import tqdm
 import numpy as np
 import os
 
-from datasets import load_multitask_data, load_multitask_test_data, \
+from preprocessing.datasets import load_multitask_data, load_multitask_test_data, \
     SentenceClassificationDataset, SentenceClassificationTestDataset, \
     SentencePairDataset, SentencePairTestDataset
 from tensorboard_utils import createConfusionMatrix
