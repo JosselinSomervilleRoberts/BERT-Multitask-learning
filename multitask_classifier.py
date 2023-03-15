@@ -351,6 +351,8 @@ class PalScheduler(Scheduler):
         probs = self.sizes ** alpha
         probs /= np.sum(probs)
         probs_biased = (probs * num_batches - 1) / (num_batches - 3)
+        probs_biased = np.clip(probs_biased, 0.025, 1)
+        probs_biased /= np.sum(probs_biased)
         schedule += np.random.choice(self.names, p=probs_biased, size=num_batches - 3).tolist()
         random.shuffle(schedule) # Shuffle the schedule
 
