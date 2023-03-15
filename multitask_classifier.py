@@ -333,7 +333,7 @@ class PalScheduler(Scheduler):
         self.sizes = np.array([len(dataloaders[dataset]) for dataset in self.names])
         self.reset()
 
-    def process_one_batch(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict):
+    def process_one_batch(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict, apply_optimization: bool = True):
         alpha = 0.2
         if num_epochs > 1: alpha = 1 - 0.8 * (epoch - 1) / (num_epochs - 1) 
         probs = self.sizes ** alpha
@@ -341,7 +341,7 @@ class PalScheduler(Scheduler):
 
         # Sample a dataset
         name = np.random.choice(self.names, p=probs)
-        return name, self.process_named_batch(objects_group, args, name)
+        return name, self.process_named_batch(objects_group, args, name, apply_optimization=apply_optimization)
 
     def process_several_batches_with_control(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict, num_batches: int):
         # First come up with a schedule
@@ -725,7 +725,7 @@ def train_multitask(args, writer):
                             losses[task] += scheduler.process_named_batch(objects_group=objects_group, args=args, name=task, apply_optimization=False)
                             num_batches[task] += 1
                         for j in range(nb_batches_per_update - 3):
-                            task, loss = scheduler.process_one_batch(objects_group=objects_group, args=args, apply_optimization=False)
+                            task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args, apply_optimization=False)
                             losses[task] += loss
                             num_batches[task] += 1
                         losses = np.array(losses.values()) / np.array(num_batches.values())
