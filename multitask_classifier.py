@@ -419,7 +419,8 @@ def save_model(model, optimizer, args, config, filepath):
 def train_multitask(args):
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
     # Load data
-    # Create the data and its corresponding datasets and dataloader
+    # Create the data and its corresponding datasets and dataloaders
+
     sst_train_data, num_labels,para_train_data, sts_train_data = load_multitask_data(args.sst_train,args.para_train,args.sts_train, split ='train')
     sst_dev_data, num_labels,para_dev_data, sts_dev_data = load_multitask_data(args.sst_dev,args.para_dev,args.sts_dev, split ='train')
     print("")
@@ -760,8 +761,15 @@ def get_args():
     parser.add_argument("--projection", type=str, choices=('none', 'pcgrad', 'vaccine'), default="none")
     parser.add_argument("--beta_vaccine", type=float, default=1e-2)
     parser.add_argument("--patience", type=int, help="Number maximum of epochs without improvement", default=5)
+    parser.add_argument("--use_preprocessing_lengths", action='store_true')
 
     args = parser.parse_args()
+
+    # Set the preprocessed training datasets
+    if args.use_preprocessing_lengths:
+        args.sst_train = "data/preprocessed_data/preprocessed-ids-sst-train.csv"
+        args.para_train = "data/preprocessed_data/preprocessed-quora-train.csv"
+        args.sts_train = "data/preprocessed_data/preprocessed-sts-train.csv"
 
     # Makes sure that the actual batch sizes are not too large
     # Gradient accumulations are used to simulate larger batch sizes
