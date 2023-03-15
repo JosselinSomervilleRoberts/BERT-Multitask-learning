@@ -728,7 +728,7 @@ def train_multitask(args, writer):
                             task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args, apply_optimization=False)
                             losses[task] += loss.item()
                             num_batches[task] += 1
-                        losses = np.array(list(losses.values())) / np.array(list(num_batches.values()))
+                        losses = [losses[task] / num_batches[task] for task in ['sst', 'sts', 'para']]
                         optimizer.backward(losses)
                         optimizer.step()
                 elif args.combine_strategy == "encourage":
@@ -742,7 +742,7 @@ def train_multitask(args, writer):
                         for j, task in enumerate(tasks):
                             num_batches[task] += 1
                             losses[task] += losses_tasks[j].item()
-                        losses = np.array(list(losses.values())) / np.array(list(num_batches.values()))
+                        losses = [losses[task] / num_batches[task] for task in ['sst', 'sts', 'para']]
                         optimizer.backward(losses)
                         optimizer.step()
 
