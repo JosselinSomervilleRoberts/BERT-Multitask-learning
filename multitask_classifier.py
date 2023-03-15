@@ -343,6 +343,26 @@ class PalScheduler(Scheduler):
         name = np.random.choice(self.names, p=probs)
         return name, self.process_named_batch(objects_group, args, name)
 
+    def process_several_batches_with_control(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict, num_batches: int):
+        # First come up with a schedule
+        schedule = ['sst', 'para', 'sts']
+        alpha = 0.2
+        if num_epochs > 1: alpha = 1 - 0.8 * (epoch - 1) / (num_epochs - 1) 
+        probs = self.sizes ** alpha
+        probs /= np.sum(probs)
+        probs_biased = (probs * num_batches - 1) / (num_batches - 3)
+        schedule += np.random.choice(self.names, p=probs_biased, size=num_batches - 3).tolist()
+        random.shuffle(schedule) # Shuffle the schedule
+
+        # Process the batches
+        losses = []
+        for task in schedule:
+            loss = self.process_named_batch(objects_group, args, task, apply_optimization=False)
+            losses.append(loss)
+        return schedule, losses
+
+
+
 
 def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
     device = args.device
@@ -690,20 +710,60 @@ def train_multitask(args, writer):
         num_batches = {'sst': 0, 'para': 0, 'sts': 0}
 
         if args.projection != "none":
-            for i in tqdm(range(int(num_batches_per_epoch / 3)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
-                losses = []
-                for j, name in enumerate(['sst', 'sts', 'para']):
-                    losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=False))
-                    n_batches += 1
-                    train_loss[name] += losses[-1].item()
-                    num_batches[name] += 1
-                    total_num_batches[name] += 1
-                    if not args.no_tensorboard:
-                        writer.add_scalar("Loss " + name, losses[-1].item(), args.batch_size * n_batches)
-                        writer.add_scalar("Specific Loss " + name, losses[-1].item(), args.batch_size * total_num_batches[name])
-                optimizer.backward(losses)
-                optimizer.step()
+            ############ Gradient Surgery / Vaccine with scheduler ############
+            if args.task_scheduler == "pal":
+                if args.combine_strategy == "none":
+                    raise ValueError("PAL used with projection requires a combining strategy")
+                elif args.combine_strategy == "force":
+                    # This method consists of running X batches for each update.
+                    # The first 3 batches corresponds to the 3 tasks.
+                    # Then the scheduler is used to choose the next batches.
+                    nb_batches_per_update = 16
+                    losses = {'sst': 0, 'para': 0, 'sts': 0}
+                    for i in tqdm(range(int(num_batches_per_epoch / nb_batches_per_update)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
+                        for task in enumerate(['sst', 'sts', 'para']):
+                            losses[task] += scheduler.process_named_batch(objects_group=objects_group, args=args, name=task, apply_optimization=False)
+                            num_batches[task] += 1
+                        for j in range(nb_batches_per_update - 3):
+                            task, loss = scheduler.process_one_batch(objects_group=objects_group, args=args, apply_optimization=False)
+                            losses[task] += loss
+                            num_batches[task] += 1
+                        losses = np.array(losses.values()) / np.array(num_batches.values())
+                        optimizer.backward(losses)
+                        optimizer.step()
+                elif args.combine_strategy == "encourage":
+                    # This method consists of running X batches for each update.
+                    # The probability of choosing a task is changed so that at least each task is chosen once.
+                    # But still follows the PAL scheduler.
+                    nb_batches_per_update = 16
+                    for i in tqdm(range(int(num_batches_per_epoch / nb_batches_per_update)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
+                        losses = {'sst': 0, 'para': 0, 'sts': 0}
+                        tasks, losses_tasks = scheduler.process_several_batches_with_control(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
+                        for j, task in enumerate(tasks):
+                            num_batches[task] += 1
+                            losses[task] += losses_tasks[j]
+                        losses = np.array(losses.values()) / np.array(num_batches.values())
+                        optimizer.backward(losses)
+                        optimizer.step()
+
+
+            else:
+                ############ Gradient Surgery / Vaccine without scheduler ############
+                for i in tqdm(range(int(num_batches_per_epoch / 3)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
+                    losses = []
+                    for j, name in enumerate(['sst', 'sts', 'para']):
+                        losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=False))
+                        n_batches += 1
+                        train_loss[name] += losses[-1].item()
+                        num_batches[name] += 1
+                        total_num_batches[name] += 1
+                        if not args.no_tensorboard:
+                            writer.add_scalar("Loss " + name, losses[-1].item(), args.batch_size * n_batches)
+                            writer.add_scalar("Specific Loss " + name, losses[-1].item(), args.batch_size * total_num_batches[name])
+                    optimizer.backward(losses)
+                    optimizer.step()
         else:
+            ############ Scheduler without projection ############
             for i in tqdm(range(num_batches_per_epoch), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
                 task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
                 n_batches += 1
@@ -897,6 +957,7 @@ def get_args():
     parser.add_argument("--task_scheduler", type=str, choices=('random', 'round_robin', 'pal', 'para', 'sts', 'sst'), default="round_robin")
 
     # Optimizations
+    parser.add_argument("--combine_strategy", type=str, choices=('none', 'encourage', 'force'), default="none")
     parser.add_argument("--use_amp", action='store_true')
     parser.add_argument("--max_batch_size_sst", type=int, default=32)
     parser.add_argument("--max_batch_size_para", type=int, default=16)
