@@ -756,8 +756,8 @@ def train_multitask(args, writer):
                             losses[task] += losses_tasks[j]
                             n_batches += 1
                             if not args.no_tensorboard:
-                                writer.add_scalar("Loss " + task, losses_tasks[task].item(), args.batch_size * n_batches)
-                                writer.add_scalar("Specific Loss " + task, losses_tasks[task].item(), args.batch_size * total_num_batches[name])
+                                writer.add_scalar("Loss " + task, losses_tasks[j].item(), args.batch_size * n_batches)
+                                writer.add_scalar("Specific Loss " + task, losses_tasks[j].item(), args.batch_size * total_num_batches[name])
                         losses = [losses[task] / num_batches[task]**alpha for task in ['sst', 'sts', 'para']]
                         optimizer.backward(losses)
                         optimizer.step()
