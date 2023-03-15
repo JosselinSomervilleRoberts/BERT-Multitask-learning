@@ -676,7 +676,8 @@ def test_model(args):
         config = saved['model_config']
 
         model = MultitaskBERT(config)
-        BertModelWithPAL.from_BertModel(model.bert, config)
+        bert_config = BertConfig()
+        BertModelWithPAL.from_BertModel(model.bert, bert_config)
         model.load_state_dict(saved['model'])
         model = model.to(device)
         print(f"Loaded model to test from {args.filepath}")
