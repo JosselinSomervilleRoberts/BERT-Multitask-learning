@@ -744,13 +744,14 @@ def train_multitask(args, writer):
                     # The probability of choosing a task is changed so that at least each task is chosen once.
                     # But still follows the PAL scheduler.
                     nb_batches_per_update = 16
+                    alpha = 0.2 + 0.8 * (epoch) / (args.epochs-1)
                     for i in tqdm(range(int(num_batches_per_epoch / nb_batches_per_update)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
                         losses = {'sst': 0, 'para': 0, 'sts': 0}
-                        tasks, losses_tasks = scheduler.process_several_batches_with_control(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
+                        tasks, losses_tasks = scheduler.process_several_batches_with_control(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args, num_batches=nb_batches_per_update)
                         for j, task in enumerate(tasks):
                             num_batches[task] += 1
                             losses[task] += losses_tasks[j].item()
-                        losses = [losses[task] / num_batches[task] for task in ['sst', 'sts', 'para']]
+                        losses = [losses[task] / num_batches[task]**alpha for task in ['sst', 'sts', 'para']]
                         optimizer.backward(losses)
                         optimizer.step()
 
