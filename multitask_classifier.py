@@ -391,7 +391,7 @@ def step_optimizer(objects_group: ObjectsGroup, args: dict, step: int, total_nb_
     torch.cuda.empty_cache()
     if TQDM_DISABLE:
         str_total_nb_batches = "?" if total_nb_batches is None else str(total_nb_batches)
-        print(f'batch {step}/{str_total_nb_batches} STS - loss: {loss_value:.3f}')
+        print(f'batch {step}/{str_total_nb_batches} STS - loss: {loss_value:.5f}')
     return loss_value
 
 def finish_training_batch(objects_group: ObjectsGroup, args: dict, step: int, gradient_accumulations: int, total_nb_batches = None):
@@ -530,8 +530,8 @@ def train_multitask(args):
                 # Print dev accuracy
                 spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
                 end_print = f'{"Saved":>{25 + spaces_per_task}}' if saved else ""
-                print(Colors.BOLD + color_score + f'{"Cur acc dev: ":<20}'   + Colors.END + color_score + f"{dev_acc:.3f}" + " " * spaces_per_task
-                    + Colors.BOLD + color_score + f'{" Best acc dev: ":<20}' + Colors.END + color_score + f"{infos[task]['best_dev_acc']:.3f}"
+                print(Colors.BOLD + color_score + f'{"Cur acc dev: ":<20}'   + Colors.END + color_score + f"{dev_acc:.5f}" + " " * spaces_per_task
+                    + Colors.BOLD + color_score + f'{" Best acc dev: ":<20}' + Colors.END + color_score + f"{infos[task]['best_dev_acc']:.5f}"
                     + end_print + Colors.END)
 
                 if epoch != args.epochs - 1: print("")
@@ -550,9 +550,9 @@ def train_multitask(args):
         (paraphrase_accuracy, para_y_pred, para_sent_ids,
             sentiment_accuracy,sst_y_pred, sst_sent_ids,
             sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
-        print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'    + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}'  + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'   + Colors.END + Colors.CYAN + f"{sts_corr:.3f}")
+        print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'    + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}'  + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'   + Colors.END + Colors.CYAN + f"{sts_corr:.5f}")
 
         # Save model
         saved_path = save_model(model, optimizer, args, config, args.filepath)
@@ -637,21 +637,21 @@ def train_multitask(args):
         print(Colors.BOLD + f'{"Num batches SST: ":<20}'   + Colors.END + f"{num_batches['sst']:<5}" + " " * spaces_per_task
             + Colors.BOLD + f'{" Num batches Para: ":<20}' + Colors.END + f"{num_batches['para']:<5}" + " " * spaces_per_task
             + Colors.BOLD + f'{" Num batches STS: ":<20}'  + Colors.END + f"{num_batches['sts']:<5}")
-        print(Colors.BOLD + f'{"Train loss SST: ":<20}'   + Colors.END  + f"{train_loss['sst']:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + f'{" Train loss Para: ":<20}' + Colors.END  + f"{train_loss['para']:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + f'{" Train loss STS: ":<20}'  + Colors.END  + f"{train_loss['sts']:.3f}")
-        print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'    + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}'  + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'   + Colors.END + Colors.CYAN + f"{sts_corr:.3f}")
-        print(Colors.BOLD + color_score + f'{"Best acc SST: ":<20}'   + Colors.END + color_score + f"{best_dev_accuracies['sst']:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + color_score + f'{" Best acc Para: ":<20}' + Colors.END + color_score + f"{best_dev_accuracies['para']:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + color_score + f'{" Best acc STS: ":<20}'  + Colors.END + color_score + f"{best_dev_accuracies['sts']:.3f}")
+        print(Colors.BOLD + f'{"Train loss SST: ":<20}'   + Colors.END  + f"{train_loss['sst']:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + f'{" Train loss Para: ":<20}' + Colors.END  + f"{train_loss['para']:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + f'{" Train loss STS: ":<20}'  + Colors.END  + f"{train_loss['sts']:.5f}")
+        print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'    + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}'  + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'   + Colors.END + Colors.CYAN + f"{sts_corr:.5f}")
+        print(Colors.BOLD + color_score + f'{"Best acc SST: ":<20}'   + Colors.END + color_score + f"{best_dev_accuracies['sst']:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + color_score + f'{" Best acc Para: ":<20}' + Colors.END + color_score + f"{best_dev_accuracies['para']:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + color_score + f'{" Best acc STS: ":<20}'  + Colors.END + color_score + f"{best_dev_accuracies['sts']:.5f}")
         end_print = f'{"Saved to: " + saved_path:>{25 + spaces_per_task}}' if saved else ""
-        print(Colors.BOLD + color_score + f'{"Mean acc dev: ":<20}'   + Colors.END + color_score + f"{arithmetic_mean_acc:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + color_score + f'{" Best mean acc: ":<20}' + Colors.END + color_score + f"{best_dev_acc:.3f}"
+        print(Colors.BOLD + color_score + f'{"Mean acc dev: ":<20}'   + Colors.END + color_score + f"{arithmetic_mean_acc:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + color_score + f'{" Best mean acc: ":<20}' + Colors.END + color_score + f"{best_dev_acc:.5f}"
             + end_print + Colors.END)
-        print(Colors.BOLD + f'{"Rel improv dev: ":<20}'   + Colors.END + f"{geom_mean_rel_improvement:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + f'{" Best rel improv: ":<20}' + Colors.END + f"{best_dev_rel_improv:.3f}")
+        print(Colors.BOLD + f'{"Rel improv dev: ":<20}'   + Colors.END + f"{geom_mean_rel_improvement:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + f'{" Best rel improv: ":<20}' + Colors.END + f"{best_dev_rel_improv:.5f}")
         print("-" * terminal_width)
         print("")
 
@@ -676,6 +676,7 @@ def test_model(args):
         config = saved['model_config']
 
         model = MultitaskBERT(config)
+        BertModelWithPAL.from_BertModel(model.bert, config)
         model.load_state_dict(saved['model'])
         model = model.to(device)
         print(f"Loaded model to test from {args.filepath}")
