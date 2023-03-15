@@ -724,12 +724,13 @@ def train_multitask(args, writer):
                     for i in tqdm(range(int(num_batches_per_epoch / nb_batches_per_update)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
                         losses = {'sst': 0, 'para': 0, 'sts': 0}
                         for task in ['sst', 'sts', 'para']:
-                            losses[task] += scheduler.process_named_batch(objects_group=objects_group, args=args, name=task, apply_optimization=False)
+                            loss = scheduler.process_named_batch(objects_group=objects_group, args=args, name=task, apply_optimization=False)
+                            losses[task] += loss
                             num_batches[task] += 1
                             n_batches += 1
                             if not args.no_tensorboard:
-                                writer.add_scalar("Loss " + task, losses[task].item(), args.batch_size * n_batches)
-                                writer.add_scalar("Specific Loss " + task, losses[task].item(), args.batch_size * total_num_batches[name])
+                                writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
+                                writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * total_num_batches[name])
                         for j in range(nb_batches_per_update - 3):
                             task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args, apply_optimization=False)
                             losses[task] += loss#.item()
@@ -752,7 +753,11 @@ def train_multitask(args, writer):
                         tasks, losses_tasks = scheduler.process_several_batches_with_control(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args, num_batches=nb_batches_per_update)
                         for j, task in enumerate(tasks):
                             num_batches[task] += 1
-                            losses[task] += losses_tasks[j].item()
+                            losses[task] += losses_tasks[j]
+                            n_batches += 1
+                            if not args.no_tensorboard:
+                                writer.add_scalar("Loss " + task, losses_tasks[task].item(), args.batch_size * n_batches)
+                                writer.add_scalar("Specific Loss " + task, losses_tasks[task].item(), args.batch_size * total_num_batches[name])
                         losses = [losses[task] / num_batches[task]**alpha for task in ['sst', 'sts', 'para']]
                         optimizer.backward(losses)
                         optimizer.step()
