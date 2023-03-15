@@ -728,8 +728,8 @@ def train_multitask(args, writer):
                             task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args, apply_optimization=False)
                             losses[task] += loss.item()
                             num_batches[task] += 1
-                        losses = [losses[task] / num_batches[task] for task in ['sst', 'sts', 'para']]
-                        optimizer.backward(losses)
+                        losses_opt = [losses[task] / num_batches[task] for task in ['sst', 'sts', 'para']]
+                        optimizer.backward(losses_opt)
                         optimizer.step()
                 elif args.combine_strategy == "encourage":
                     # This method consists of running X batches for each update.
