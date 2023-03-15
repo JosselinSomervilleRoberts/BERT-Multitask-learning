@@ -1076,7 +1076,10 @@ def get_args():
         if args.projection != "vaccine" and args.beta_vaccine != 1e-2:
             warn("Beta for Vaccine is only used when Vaccine is used")
         if args.projection != "none" and args.task_scheduler != "round_robin":
-            warn("PCGrad & Vaccine do not use task scheduler")
+            if args.combined_method == "none":
+                warn("Combined method is not specified. It should be specified when using projection and PAL")
+                raise ValueError("Combined method is not specified. It should be specified when using projection and PAL")
+            warn("[EXPERIMENTAL] PCGrad & Vaccine use combined methods", color=Colors.YELLOW)
 
     return args, writer
 
