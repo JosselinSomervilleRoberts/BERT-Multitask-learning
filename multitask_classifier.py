@@ -19,6 +19,7 @@ from gradvac_amp import GradVacAMP
 import copy
 
 from smart_regularization import smart_regularization
+from transformers import RobertaTokenizer, RobertaModel
 
 from datasets import SentenceClassificationDataset, SentencePairDataset, \
     load_multitask_data, load_multitask_test_data
@@ -55,7 +56,7 @@ def seed_everything(seed=11711):
     torch.backends.cudnn.deterministic = True
 
 
-BERT_HIDDEN_SIZE = 768
+BERT_HIDDEN_SIZE = 1024
 N_SENTIMENT_CLASSES = 5
 N_STS_CLASSES = 6
 
@@ -78,8 +79,22 @@ class MultitaskBERT(nn.Module):
         super(MultitaskBERT, self).__init__()
         # You will want to add layers here to perform the downstream tasks.
         # Pretrain mode does not require updating bert paramters.
-        self.bert = BertModel.from_pretrained("bert-base-uncased")
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        if args.transformer == 'bert-large':
+            self.bert = BertModel.from_pretrained("bert-large-uncased")
+            self.tokenizer = BertTokenizer.from_pretrained('bert-large-uncased')
+            BERT_HIDDEN_SIZE = 1024
+        elif args.transformer == 'roberta-large':
+            self.bert = RobertaModel.from_pretrained("roberta-large-mnli")
+            self.tokenizer = RobertaTokenizer.from_pretrained('roberta-large-mnli')
+            BERT_HIDDEN_SIZE = 1024
+        elif args.transformer == 'roberta':
+            self.bert = RobertaModel.from_pretrained("roberta-base")
+            self.tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
+            BERT_HIDDEN_SIZE = 768
+        else:
+            self.bert = BertModel.from_pretrained("bert-base-uncased")
+            self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+            BERT_HIDDEN_SIZE = 768
         for param in self.bert.parameters():
             if config.option == 'finetune':
                 param.requires_grad = True
@@ -872,7 +887,8 @@ def get_args():
     parser.add_argument("--save_loss_acc_logs", type=bool, default=False)
 
     # hyper parameters
-    parser.add_argument("--batch_size", help='This is the simulated batch size using gradient accumulations', type=int, default=256)
+    parser.add_argument("--transformer", type=str, choices=('bert', 'roberta', 'bert-large', 'roberta-large'), default="bert")
+    parser.add_argument("--batch_size", help='This is the simulated batch size using gradient accumulations', type=int, default=128)
     parser.add_argument("--hidden_dropout_prob", type=float, default=0.2)
     parser.add_argument("--n_hidden_layers", type=int, default=2, help="Number of hidden layers for the classifier")
     parser.add_argument("--lr", type=float, help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
@@ -882,9 +898,9 @@ def get_args():
 
     # Optimizations
     parser.add_argument("--use_amp", action='store_true')
-    parser.add_argument("--max_batch_size_sst", type=int, default=64)
-    parser.add_argument("--max_batch_size_para", type=int, default=32)
-    parser.add_argument("--max_batch_size_sts", type=int, default=64)
+    parser.add_argument("--max_batch_size_sst", type=int, default=32)
+    parser.add_argument("--max_batch_size_para", type=int, default=16)
+    parser.add_argument("--max_batch_size_sts", type=int, default=32)
     parser.add_argument("--projection", type=str, choices=('none', 'pcgrad', 'vaccine'), default="none")
     parser.add_argument("--beta_vaccine", type=float, default=1e-2)
     parser.add_argument("--patience", type=int, help="Number maximum of epochs without improvement", default=5)
@@ -929,7 +945,7 @@ def get_args():
     print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = print_length, var_length = 20)
     print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = print_length, var_length = 25)
 
-    hyperparameters = ["n_hidden_layers", "batch_size", "epochs", "lr", "hidden_dropout_prob", "seed"]
+    hyperparameters = ["n_hidden_layers", "batch_size", "epochs", "lr", "hidden_dropout_prob", "seed", "transformer"]
     if args.option == "finetune": hyperparameters += ["num_batches_per_epoch"]
     print_subset_of_args(args, "HYPERPARAMETERS", hyperparameters, color = Colors.GREEN, print_length = print_length, var_length = 30)
     
