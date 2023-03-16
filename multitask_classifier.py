@@ -928,6 +928,15 @@ def test_model(args):
 
 def print_subset_of_args(args, title, list_of_args, color = Colors.BLUE, print_length = 50, var_length = 15):
     """Prints a subset of the arguments in a nice format."""
+    if type(args) == dict:
+        print("\n" + color + f'{" " + title + " ":█^{print_length}}')
+        for arg in list_of_args:
+            if arg != "args":
+                print(Colors.BOLD + f'█ {arg + ": ": >{var_length}}' + Colors.END + f'{args[arg]: <{print_length - var_length - 3}}' +  color  + '█')
+        print("█" * print_length + Colors.END)
+        return
+    
+    # If args is not a dict, it is an argparse.Namespace
     print("\n" + color + f'{" " + title + " ":█^{print_length}}')
     for arg in list_of_args:
         print(Colors.BOLD + f'█ {arg + ": ": >{var_length}}' + Colors.END + f'{getattr(args, arg): <{print_length - var_length - 3}}' +  color  + '█')
