@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from config import BertConfig
 
 from bert import BertModel, BertModelWithPAL
-from tokenizer import BertTokenizer
+from preprocessing.tokenizer import BertTokenizer
 from optimizer import AdamW
 from torch.cuda.amp import GradScaler, autocast
 from contextlib import nullcontext
