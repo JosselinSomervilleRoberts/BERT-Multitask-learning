@@ -461,11 +461,11 @@ def train_multitask(args):
     config = SimpleNamespace(**config)
 
     model = MultitaskBERT(config)
+    bert_config = BertConfig()
     BertModelWithPAL.from_BertModel(model.bert, bert_config)
 
     if args.pretrained_model_name != "none":
         config = load_model(model, args.pretrained_model_name)
-    bert_config = BertConfig()
     model = model.to(device)
 
     lr = args.lr
