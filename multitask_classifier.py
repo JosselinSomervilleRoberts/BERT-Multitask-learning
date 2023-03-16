@@ -990,12 +990,12 @@ def get_args():
     args = parser.parse_args()
 
     # Set the preprocessed training datasets
-    if args.use_preprocessing_lengths == "lengths":
+    if args.use_preprocessing == "lengths":
         args.sst_train = "data/preprocessed_data/lengths/preprocessed-ids-sst-train.csv"
         args.para_train = "data/preprocessed_data/lengths/preprocessed-quora-train.csv"
         args.sts_train = "data/preprocessed_data/lengths/preprocessed-sts-train.csv"
         
-    elif args.use_preprocessing_lengths == "lengths_augmented":
+    elif args.use_preprocessing == "lengths_augmented":
         args.sst_train = "data/preprocessed_data/EDA_data/preprocessed-EDA-ids-sst-train.csv"
         args.para_train = "data/preprocessed_data/lengths/preprocessed-quora-train.csv"
         args.sts_train = "data/preprocessed_data/lengths/preprocessed-sts-train.csv"
