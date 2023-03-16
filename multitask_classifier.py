@@ -563,7 +563,7 @@ def train_multitask(args):
         print(Colors.BOLD + Colors.CYAN + f'{"     Evaluation Multitask     ":-^{os.get_terminal_size().columns}}' + Colors.END + Colors.CYAN)
         (paraphrase_accuracy, para_y_pred, para_sent_ids,
             sentiment_accuracy,sst_y_pred, sst_sent_ids,
-            sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
+            sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, use_sigmoid=args.use_sigmoid_in_eval)
         print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'    + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.5f}" + " " * spaces_per_task
             + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}'  + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.5f}" + " " * spaces_per_task
             + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'   + Colors.END + Colors.CYAN + f"{sts_corr:.5f}")
@@ -619,7 +619,7 @@ def train_multitask(args):
         # Eval on dev
         (paraphrase_accuracy, para_y_pred, para_sent_ids,
         sentiment_accuracy,sst_y_pred, sst_sent_ids,
-        sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
+        sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, use_sigmoid=args.use_sigmoid_in_eval)
         
         # Useful for deg
         # paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
@@ -750,6 +750,7 @@ def get_args():
     parser.add_argument("--task_scheduler", type=str, choices=('random', 'round_robin', 'pal'), default="round_robin")
 
     # Optimizations
+    parser.add_argument("--use_sigmoid_in_eval", action='store_true')
     parser.add_argument("--use_pal", action='store_true', help="Use additionnal PAL in BERT layers")
     parser.add_argument("--no_train_classifier", action='store_true')
     parser.add_argument("--use_amp", action='store_true')
@@ -775,7 +776,7 @@ def get_args():
     print_length = 62
     print_subset_of_args(args, "DATASETS", ["sst_train", "sst_dev", "sst_test", "para_train", "para_dev", "para_test", "sts_train", "sts_dev", "sts_test"], color = Colors.BLUE, print_length = print_length, var_length = 20)
     print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = print_length, var_length = 20)
-    print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name", "no_train_classifier"], color = Colors.CYAN, print_length = print_length, var_length = 25)
+    print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name", "no_train_classifier", "use_sigmoid_in_eval"], color = Colors.CYAN, print_length = print_length, var_length = 25)
 
     hyperparameters = ["n_hidden_layers", "batch_size", "epochs", "lr", "hidden_dropout_prob", "seed"]
     if args.option == "finetune": hyperparameters += ["num_batches_per_epoch"]

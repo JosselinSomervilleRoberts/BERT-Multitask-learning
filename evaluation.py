@@ -93,7 +93,7 @@ def model_eval_paraphrase(paraphrase_dataloader, model, device):
 
 
 
-def model_eval_sts(sts_dataloader, model, device):
+def model_eval_sts(sts_dataloader, model, device, use_sigmoid=False):
     model.eval()  # switch to eval model, will turn off randomness like dropout
 
     with torch.no_grad():
@@ -115,8 +115,12 @@ def model_eval_sts(sts_dataloader, model, device):
             b_mask2 = b_mask2.to(device)
 
             logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-            y_hat = logits.sigmoid().flatten().cpu().numpy()
-            b_labels = b_labels.sigmoid().flatten().cpu().numpy()
+            if use_sigmoid:
+                y_hat = logits.sigmoid().flatten().cpu().numpy()
+                b_labels = b_labels.sigmoid().flatten().cpu().numpy()
+            else:
+                y_hat = logits.flatten().cpu().numpy()
+                b_labels = b_labels.flatten().cpu().numpy()
 
             sts_y_pred.extend(y_hat)
             sts_y_true.extend(b_labels)
@@ -159,9 +163,9 @@ def model_eval_sentiment(sentiment_dataloader, model, device):
 def model_eval_multitask(sentiment_dataloader,
                          paraphrase_dataloader,
                          sts_dataloader,
-                         model, device):
+                         model, device, use_sigmoid=False):
     paraphrase_accuracy, para_y_pred, para_sent_ids = model_eval_paraphrase(paraphrase_dataloader, model, device)
-    sts_corr, sts_y_pred, sts_sent_ids = model_eval_sts(sts_dataloader, model, device)
+    sts_corr, sts_y_pred, sts_sent_ids = model_eval_sts(sts_dataloader, model, device, use_sigmoid=use_sigmoid)
     sentiment_accuracy, sst_y_pred, sst_sent_ids = model_eval_sentiment(sentiment_dataloader, model, device)
 
     return (paraphrase_accuracy, para_y_pred, para_sent_ids,
@@ -281,7 +285,7 @@ def test_model_multitask(args, model, device):
             dev_sentiment_accuracy,dev_sst_y_pred, dev_sst_sent_ids, dev_sts_corr, \
             dev_sts_y_pred, dev_sts_sent_ids = model_eval_multitask(sst_dev_dataloader,
                                                                     para_dev_dataloader,
-                                                                    sts_dev_dataloader, model, device)
+                                                                    sts_dev_dataloader, model, device, use_sigmoid=False)
 
         test_para_y_pred, test_para_sent_ids, test_sst_y_pred, \
             test_sst_sent_ids, test_sts_y_pred, test_sts_sent_ids = \
