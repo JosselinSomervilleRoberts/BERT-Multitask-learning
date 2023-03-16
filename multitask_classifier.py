@@ -22,7 +22,10 @@ from ray import tune
 from ray.util import inspect_serializability
 from ray.tune.logger import Logger, DEFAULT_LOGGERS
 from ray.tune.logger import NoopLogger
+from ray.tune import CLIReporter
 import logging
+from ray.tune import ProgressReporter
+
 
 
 from datasets import SentenceClassificationDataset, SentencePairDataset, \
@@ -429,11 +432,7 @@ def save_model(model, optimizer, args, config, filepath):
 
 def train_multitask(config):
     args = config['args']
-    lr = config['lr']
-    assert torch.cuda.is_available()
-def train_multitask(config):
-    args = config['args']
-    lr = config['lr']
+    config_hyperparam = config
     assert torch.cuda.is_available()
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
     # print('device', device)
@@ -469,13 +468,13 @@ def train_multitask(config):
                                     collate_fn=sts_dev_data.collate_fn)
 
     # Init model
-    config = {'hidden_dropout_prob': args.hidden_dropout_prob,
+    config = {'hidden_dropout_prob': config_hyperparam['hidden_dropout_prob'],
               'num_labels': num_labels,
               'hidden_size': 768,
               'data_dir': '.',
               'option': args.option,
               'pretrained_model_name': args.pretrained_model_name,
-              'n_hidden_layers': args.n_hidden_layers}
+              'n_hidden_layers': config_hyperparam['n_hidden_layers']}
 
     config = SimpleNamespace(**config)
 
@@ -484,15 +483,13 @@ def train_multitask(config):
         config = load_model(model, args.pretrained_model_name)
     model = model.to(device)
 
-    lr = lr
-    lr = lr
-    optimizer = AdamW(model.parameters(), lr=lr)
+    optimizer = AdamW(model.parameters(), lr=config_hyperparam['lr'])
     scaler = None if not args.use_amp else GradScaler()
 
-    if args.projection == 'pcgrad':
+    if config_hyperparam['projection'] == 'pcgrad':
         optimizer = PCGrad(optimizer) if not args.use_amp else PCGradAMP(num_tasks=3, optimizer=optimizer, scaler=scaler)
-    elif args.projection == 'vaccine':
-        optimizer = GradVacAMP(num_tasks=3, optimizer=optimizer, scaler=scaler, DEVICE=device, beta=args.beta_vaccine)
+    elif config_hyperparam['projection'] == 'vaccine':
+        optimizer = GradVacAMP(num_tasks=3, optimizer=optimizer, scaler=scaler, DEVICE=device, beta=config_hyperparam['beta_vaccine'])
     best_dev_acc = 0
     best_dev_accuracies = {'sst': 0, 'para': 0, 'sts': 0}
     best_dev_rel_improv = 0
@@ -528,7 +525,7 @@ def train_multitask(config):
                 'sts':  {'num_batches': len(sts_train_dataloader), 'eval_fn': model_eval_sts, 'dev_dataloader': sts_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_similarity}}
         
         for task in ['sst', 'sts', 'para']:
-            optimizer = AdamW(model.parameters(), lr=lr)
+            optimizer = AdamW(model.parameters(), lr=config_hyperparam['lr'])
             terminal_width = get_term_width()
             last_improv = -1
             print(Colors.BOLD + f'{"     Individually Pretraining " + task + "     ":-^{get_term_width()}}' + Colors.END)
@@ -611,7 +608,7 @@ def train_multitask(config):
         train_loss = {'sst': 0, 'para': 0, 'sts': 0}
         num_batches = {'sst': 0, 'para': 0, 'sts': 0}
 
-        if args.projection != "none":
+        if config_hyperparam['projection'] != "none":
             for i in tqdm(range(int(num_batches_per_epoch / 3)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
                 losses = []
                 for j, name in enumerate(['sst', 'sts', 'para']):
@@ -729,19 +726,17 @@ def train_multitask(config):
     
     if args.save_loss_acc_logs:
         # Write train_loss_logs_epochs to file
-        with open('train_loss_logs_epochs_{}_{}.txt'.format(args.task_scheduler, args.n_hidden_layers), 'w') as f:
-            f.write('{} {} hidden layer\n'.format(args.task_scheduler, args.n_hidden_layers))
+        with open('train_loss_logs_epochs_{}_{}.txt'.format(args.task_scheduler, config_hyperparam['n_hidden_layers']), 'w') as f:
+            f.write('{} {} hidden layer\n'.format(args.task_scheduler, config_hyperparam['n_hidden_layers']))
             # Loop through the dictionary items and write them to the file
             for key, value in train_loss_logs_epochs.items():
                 f.write('{}: {}\n'.format(key, value))
         #Write dev_acc_logs_epochs to file
-        with open('dev_acc_logs_epochs_{}_{}.txt'.format(args.task_scheduler, args.n_hidden_layers), 'w') as f:
-            f.write('{} {} hidden layer\n'.format(args.task_scheduler, args.n_hidden_layers))
+        with open('dev_acc_logs_epochs_{}_{}.txt'.format(args.task_scheduler, config_hyperparam['n_hidden_layers']), 'w') as f:
+            f.write('{} {} hidden layer\n'.format(args.task_scheduler, config_hyperparam['n_hidden_layers']))
             # Loop through the dictionary items and write them to the file
             for key, value in dev_acc_logs_epochs.items():
                 f.write('{}: {}\n'.format(key, value))
-
-    tune.report(accuracy = arithmetic_mean_acc)
 
     tune.report(accuracy = arithmetic_mean_acc)
 
@@ -784,21 +779,11 @@ def get_args():
     parser.add_argument("--sst_train", type=str, default=home_dir+"data/ids-sst-train.csv")
     parser.add_argument("--sst_dev", type=str, default=home_dir+"data/ids-sst-dev.csv")
     parser.add_argument("--sst_test", type=str, default=home_dir+"data/ids-sst-test-student.csv")
-    home_dir = '/home/ubuntu/cs224n/CS224N-Project-BERT-MultiTask/'
-    parser.add_argument("--sst_train", type=str, default=home_dir+"data/ids-sst-train.csv")
-    parser.add_argument("--sst_dev", type=str, default=home_dir+"data/ids-sst-dev.csv")
-    parser.add_argument("--sst_test", type=str, default=home_dir+"data/ids-sst-test-student.csv")
 
     parser.add_argument("--para_train", type=str, default=home_dir+"data/quora-train.csv")
     parser.add_argument("--para_dev", type=str, default=home_dir+"data/quora-dev.csv")
     parser.add_argument("--para_test", type=str, default=home_dir+"data/quora-test-student.csv")
-    parser.add_argument("--para_train", type=str, default=home_dir+"data/quora-train.csv")
-    parser.add_argument("--para_dev", type=str, default=home_dir+"data/quora-dev.csv")
-    parser.add_argument("--para_test", type=str, default=home_dir+"data/quora-test-student.csv")
 
-    parser.add_argument("--sts_train", type=str, default=home_dir+"data/sts-train.csv")
-    parser.add_argument("--sts_dev", type=str, default=home_dir+"data/sts-dev.csv")
-    parser.add_argument("--sts_test", type=str, default=home_dir+"data/sts-test-student.csv")
     parser.add_argument("--sts_train", type=str, default=home_dir+"data/sts-train.csv")
     parser.add_argument("--sts_dev", type=str, default=home_dir+"data/sts-dev.csv")
     parser.add_argument("--sts_test", type=str, default=home_dir+"data/sts-test-student.csv")
@@ -813,16 +798,10 @@ def get_args():
 
     parser.add_argument("--sst_dev_out", type=str, default=home_dir+"predictions/sst-dev-output.csv")
     parser.add_argument("--sst_test_out", type=str, default=home_dir+"predictions/sst-test-output.csv")
-    parser.add_argument("--sst_dev_out", type=str, default=home_dir+"predictions/sst-dev-output.csv")
-    parser.add_argument("--sst_test_out", type=str, default=home_dir+"predictions/sst-test-output.csv")
 
     parser.add_argument("--para_dev_out", type=str, default=home_dir+"predictions/para-dev-output.csv")
     parser.add_argument("--para_test_out", type=str, default=home_dir+"predictions/para-test-output.csv")
-    parser.add_argument("--para_dev_out", type=str, default=home_dir+"predictions/para-dev-output.csv")
-    parser.add_argument("--para_test_out", type=str, default=home_dir+"predictions/para-test-output.csv")
 
-    parser.add_argument("--sts_dev_out", type=str, default=home_dir+"predictions/sts-dev-output.csv")
-    parser.add_argument("--sts_test_out", type=str, default=home_dir+"predictions/sts-test-output.csv")
     parser.add_argument("--sts_dev_out", type=str, default=home_dir+"predictions/sts-dev-output.csv")
     parser.add_argument("--sts_test_out", type=str, default=home_dir+"predictions/sts-test-output.csv")
 
@@ -929,20 +908,30 @@ if __name__ == "__main__":
     args.filepath = f'{args.option}-{args.epochs}-{args.lr}-multitask.pt' # save path
     seed_everything(args.seed)  # fix the seed for reproducibility
     ray.init(logging_level=logging.ERROR)
+
+    #######################################################
+    #Set hyperparameter tuning ranges in search space
+    #######################################################
     search_space = {
-        "lr": tune.sample_from(lambda spec: 10 ** (-10 * np.random.rand())),
+        "lr": tune.loguniform(1e-7,1e-4),  #learning rates between 10^-7 and 10^-4
         "n_hidden_layers": tune.sample_from(lambda spec: np.random.randint(1,4)),
+        "hidden_dropout_prob": tune.sample_from(lambda spec: np.random.uniform(0,.4)),
+        "projection": tune.choice(['none', 'pcgrad', 'vaccine']),
+        "beta-vaccine": tune.sample_from(lambda spec: 10 ** (-10 * np.random.randint(1,3))),
         "args": args
     }
+
+    #######################################################
+    #Set tuner arguments
+    #######################################################
     tuner = tune.run(
         train_multitask,
         config=search_space,
         max_failures=100,
         resources_per_trial={'gpu': 1},
-        num_samples=2,
+        num_samples=2,  #set the number of hyperparameter combinations to try out
         metric='accuracy',
         mode='max',
-        # checkpoint_freq = 0,
     )
     best_config = tuner.get_best_config(metric="accuracy", mode="max")
     print('best trial config', best_config)
