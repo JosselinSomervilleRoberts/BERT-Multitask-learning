@@ -20,6 +20,10 @@ import copy
 import ray
 from ray import tune
 from ray.util import inspect_serializability
+from ray.tune.logger import Logger, DEFAULT_LOGGERS
+from ray.tune.logger import NoopLogger
+import logging
+
 
 from datasets import SentenceClassificationDataset, SentencePairDataset, \
     load_multitask_data, load_multitask_test_data
@@ -427,7 +431,12 @@ def train_multitask(config):
     args = config['args']
     lr = config['lr']
     assert torch.cuda.is_available()
+def train_multitask(config):
+    args = config['args']
+    lr = config['lr']
+    assert torch.cuda.is_available()
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
+    # print('device', device)
     # print('device', device)
     # Load data
     # Create the data and its corresponding datasets and dataloader
@@ -475,6 +484,7 @@ def train_multitask(config):
         config = load_model(model, args.pretrained_model_name)
     model = model.to(device)
 
+    lr = lr
     lr = lr
     optimizer = AdamW(model.parameters(), lr=lr)
     scaler = None if not args.use_amp else GradScaler()
@@ -526,6 +536,7 @@ def train_multitask(config):
                 for i in tqdm(range(infos[task]['num_batches']), desc=task + ' epoch ' + str(epoch), disable=TQDM_DISABLE, smoothing=0):
                     loss = scheduler.process_named_batch(name=task, objects_group=objects_group, args=args)
                     # writer.add_scalar("Loss pretrain " + task, loss.item(), args.batch_size * (epoch * infos[task]['num_batches'] + i))
+                    # writer.add_scalar("Loss pretrain " + task, loss.item(), args.batch_size * (epoch * infos[task]['num_batches'] + i))
                 
                 # Evaluate on dev set
                 color_score, saved = Colors.BLUE, False
@@ -535,6 +546,12 @@ def train_multitask(config):
                     infos[task]['best_model'] = copy.deepcopy(infos[task]['layer'].state_dict())
                     color_score, saved = Colors.PURPLE, True
                     last_improv = epoch
+                # writer.add_scalar("[EPOCH] Dev accuracy " + task, dev_acc, epoch)
+                # writer.add_scalar("Dev accuracy " + task, dev_acc, epoch * args.batch_size_sts * infos[task]['num_batches'])
+                #raytune
+                # print('tuning')
+                # # tune.track.log(mean_accuracy=dev_acc)
+                # tune.report(mean_accuracy=dev_acc)train_hyperparams_2023-03-14_04-50-31
                 # writer.add_scalar("[EPOCH] Dev accuracy " + task, dev_acc, epoch)
                 # writer.add_scalar("Dev accuracy " + task, dev_acc, epoch * args.batch_size_sts * infos[task]['num_batches'])
                 #raytune
@@ -601,6 +618,7 @@ def train_multitask(config):
                     losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=False))
                     train_loss[name] += losses[-1].item()
                     # writer.add_scalar("Loss " + args.option + " " + name, losses[-1].item(), args.batch_size * (epoch * num_batches_per_epoch + 3 * i + j))
+                    # writer.add_scalar("Loss " + args.option + " " + name, losses[-1].item(), args.batch_size * (epoch * num_batches_per_epoch + 3 * i + j))
                     num_batches[name] += 1
                 optimizer.backward(losses)
                 optimizer.step()
@@ -608,6 +626,7 @@ def train_multitask(config):
             for i in tqdm(range(num_batches_per_epoch), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
                 task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
                 train_loss[task] += loss.item()
+                # writer.add_scalar("Loss " + args.option + " " + task, loss.item(), args.batch_size * (epoch * num_batches_per_epoch + i))
                 # writer.add_scalar("Loss " + args.option + " " + task, loss.item(), args.batch_size * (epoch * num_batches_per_epoch + i))
                 num_batches[task] += 1
 
@@ -642,6 +661,20 @@ def train_multitask(config):
         arithmetic_mean_acc = (paraphrase_accuracy + sentiment_accuracy + sts_corr) / 3
         
         # Write to tensorboard
+        # writer.add_scalar("[EPOCH] Dev accuracy sst", sentiment_accuracy, epoch)
+        # writer.add_scalar("[EPOCH] Dev accuracy para", paraphrase_accuracy, epoch)
+        # writer.add_scalar("[EPOCH] Dev accuracy sts", sts_corr, epoch)
+        # writer.add_scalar("[EPOCH] Dev accuracy mean", arithmetic_mean_acc, epoch)
+        # writer.add_scalar("[EPOCH] Num batches sst", num_batches['sst'], epoch)
+        # writer.add_scalar("[EPOCH] Num batches para", num_batches['para'], epoch)
+        # writer.add_scalar("[EPOCH] Num batches sts", num_batches['sts'], epoch)
+        # writer.add_scalar("Dev accuracy sst", sentiment_accuracy, epoch * args.batch_size * num_batches_per_epoch)
+        # writer.add_scalar("Dev accuracy para", paraphrase_accuracy, epoch * args.batch_size * num_batches_per_epoch)
+        # writer.add_scalar("Dev accuracy sts", sts_corr, epoch * args.batch_size * num_batches_per_epoch)
+        # writer.add_scalar("Dev accuracy mean", arithmetic_mean_acc, epoch * args.batch_size * num_batches_per_epoch)
+        # writer.add_scalar("Num batches sst", num_batches['sst'], epoch * args.batch_size * num_batches_per_epoch)
+        # writer.add_scalar("Num batches para", num_batches['para'], epoch * args.batch_size * num_batches_per_epoch)
+        # writer.add_scalar("Num batches sts", num_batches['sts'], epoch * args.batch_size * num_batches_per_epoch)
         # writer.add_scalar("[EPOCH] Dev accuracy sst", sentiment_accuracy, epoch)
         # writer.add_scalar("[EPOCH] Dev accuracy para", paraphrase_accuracy, epoch)
         # writer.add_scalar("[EPOCH] Dev accuracy sts", sts_corr, epoch)
@@ -710,6 +743,8 @@ def train_multitask(config):
 
     tune.report(accuracy = arithmetic_mean_acc)
 
+    tune.report(accuracy = arithmetic_mean_acc)
+
 
 def load_model(model, filepath):
     with torch.no_grad():
@@ -749,11 +784,21 @@ def get_args():
     parser.add_argument("--sst_train", type=str, default=home_dir+"data/ids-sst-train.csv")
     parser.add_argument("--sst_dev", type=str, default=home_dir+"data/ids-sst-dev.csv")
     parser.add_argument("--sst_test", type=str, default=home_dir+"data/ids-sst-test-student.csv")
+    home_dir = '/home/ubuntu/cs224n/CS224N-Project-BERT-MultiTask/'
+    parser.add_argument("--sst_train", type=str, default=home_dir+"data/ids-sst-train.csv")
+    parser.add_argument("--sst_dev", type=str, default=home_dir+"data/ids-sst-dev.csv")
+    parser.add_argument("--sst_test", type=str, default=home_dir+"data/ids-sst-test-student.csv")
 
     parser.add_argument("--para_train", type=str, default=home_dir+"data/quora-train.csv")
     parser.add_argument("--para_dev", type=str, default=home_dir+"data/quora-dev.csv")
     parser.add_argument("--para_test", type=str, default=home_dir+"data/quora-test-student.csv")
+    parser.add_argument("--para_train", type=str, default=home_dir+"data/quora-train.csv")
+    parser.add_argument("--para_dev", type=str, default=home_dir+"data/quora-dev.csv")
+    parser.add_argument("--para_test", type=str, default=home_dir+"data/quora-test-student.csv")
 
+    parser.add_argument("--sts_train", type=str, default=home_dir+"data/sts-train.csv")
+    parser.add_argument("--sts_dev", type=str, default=home_dir+"data/sts-dev.csv")
+    parser.add_argument("--sts_test", type=str, default=home_dir+"data/sts-test-student.csv")
     parser.add_argument("--sts_train", type=str, default=home_dir+"data/sts-train.csv")
     parser.add_argument("--sts_dev", type=str, default=home_dir+"data/sts-dev.csv")
     parser.add_argument("--sts_test", type=str, default=home_dir+"data/sts-test-student.csv")
@@ -768,10 +813,16 @@ def get_args():
 
     parser.add_argument("--sst_dev_out", type=str, default=home_dir+"predictions/sst-dev-output.csv")
     parser.add_argument("--sst_test_out", type=str, default=home_dir+"predictions/sst-test-output.csv")
+    parser.add_argument("--sst_dev_out", type=str, default=home_dir+"predictions/sst-dev-output.csv")
+    parser.add_argument("--sst_test_out", type=str, default=home_dir+"predictions/sst-test-output.csv")
 
     parser.add_argument("--para_dev_out", type=str, default=home_dir+"predictions/para-dev-output.csv")
     parser.add_argument("--para_test_out", type=str, default=home_dir+"predictions/para-test-output.csv")
+    parser.add_argument("--para_dev_out", type=str, default=home_dir+"predictions/para-dev-output.csv")
+    parser.add_argument("--para_test_out", type=str, default=home_dir+"predictions/para-test-output.csv")
 
+    parser.add_argument("--sts_dev_out", type=str, default=home_dir+"predictions/sts-dev-output.csv")
+    parser.add_argument("--sts_test_out", type=str, default=home_dir+"predictions/sts-test-output.csv")
     parser.add_argument("--sts_dev_out", type=str, default=home_dir+"predictions/sts-dev-output.csv")
     parser.add_argument("--sts_test_out", type=str, default=home_dir+"predictions/sts-test-output.csv")
 
@@ -877,10 +928,10 @@ if __name__ == "__main__":
     args = get_args()
     args.filepath = f'{args.option}-{args.epochs}-{args.lr}-multitask.pt' # save path
     seed_everything(args.seed)  # fix the seed for reproducibility
-    
-    ray.init()
+    ray.init(logging_level=logging.ERROR)
     search_space = {
         "lr": tune.sample_from(lambda spec: 10 ** (-10 * np.random.rand())),
+        "n_hidden_layers": tune.sample_from(lambda spec: np.random.randint(1,4)),
         "args": args
     }
     tuner = tune.run(
@@ -891,6 +942,7 @@ if __name__ == "__main__":
         num_samples=2,
         metric='accuracy',
         mode='max',
+        # checkpoint_freq = 0,
     )
     best_config = tuner.get_best_config(metric="accuracy", mode="max")
     print('best trial config', best_config)
