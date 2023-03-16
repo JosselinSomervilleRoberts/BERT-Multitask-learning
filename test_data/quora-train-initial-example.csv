@@ -1,0 +1,6 @@
+	id	sentence1	sentence2	is_duplicate
+321296	a4da64a4e943bf8b008d174ca	How can I master myself in geometry?	How can I master geometry for the CAT-14?	0.0
+373075	f965ab2d29d51008ab3872f47	Can deleted pictures on Instagram be recovered?	How do I delete a picture on Instagram?	0.0
+213557	5aca073f4a977d55176f68572	Who is the best prime minister India has ever had?	Who is the best prime minister of the india till now?	1.0
+209343	a8abbd08d3401287da42acfb9	What qualifications do I need to get a job in CERN?	What qualifications do I need to be able to work for CERN?	1.0
+389061	65dffaf8ac0ed7f3ebfcf0b02	In what situations is it okay to lie?	When is it okay to lie?	1.0
