@@ -621,9 +621,9 @@ def train_multitask(config):
         n_batches = 0
         num_batches_per_epoch = args.num_batches_per_epoch if args.num_batches_per_epoch > 0 else len(sst_train_dataloader)
         # Dict to train each task separately
-        infos = {'sst': {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_sentiment, 'dev_dataloader': sst_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_sentiment, 'optimizer': AdamW(model.parameters(), lr=lr), "last_improv": -1, 'first': True, 'first_loss': True},
-                'para': {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_paraphrase, 'dev_dataloader': para_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_paraphrase, 'optimizer': AdamW(model.parameters(), lr=lr), "last_improv": -1, 'first': True, 'first_loss': True},
-                'sts':  {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_sts, 'dev_dataloader': sts_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_similarity, 'optimizer': AdamW(model.parameters(), lr=lr), "last_improv": -1, 'first': True, 'first_loss': True}}
+        infos = {'sst': {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_sentiment, 'dev_dataloader': sst_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_sentiment, 'optimizer': AdamW(model.parameters(), lr=config_hyperparam['lr']), "last_improv": -1, 'first': True, 'first_loss': True},
+                'para': {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_paraphrase, 'dev_dataloader': para_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_paraphrase, 'optimizer': AdamW(model.parameters(), lr=config_hyperparam['lr']), "last_improv": -1, 'first': True, 'first_loss': True},
+                'sts':  {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_sts, 'dev_dataloader': sts_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_similarity, 'optimizer': AdamW(model.parameters(), lr=config_hyperparam['lr']), "last_improv": -1, 'first': True, 'first_loss': True}}
         total_num_batches = {'sst': 0, 'para': 0, 'sts': 0}
 
         for epoch in range(args.epochs):
@@ -796,7 +796,7 @@ def train_multitask(config):
                 total_num_batches[task] += 1
                 if not args.no_tensorboard:
                     writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
-                    # writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * total_num_batches[task])
+                    writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * total_num_batches[task])
 
         # Compute average train loss
         for task in train_loss:
@@ -1135,7 +1135,7 @@ if __name__ == "__main__":
             "n_hidden_layers": tune.sample_from(lambda spec: np.random.randint(0,3)),
             "hidden_dropout_prob": tune.sample_from(lambda spec: np.random.uniform(0,.4)),
             "projection": tune.choice(['none', 'pcgrad', 'vaccine']),
-            "beta-vaccine": tune.sample_from(lambda spec: 10 ** (-10 * np.random.randint(0,2))),
+            "beta-vaccine": tune.sample_from(lambda spec: 1 - 10 ** (-np.random.randint(1,3))),
             "task_scheduler": tune.choice(['round_robin', 'pal']),
             "args": args
         }
