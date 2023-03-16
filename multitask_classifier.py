@@ -19,11 +19,18 @@ from pcgrad_amp import PCGradAMP
 from gradvac_amp import GradVacAMP
 import copy
 
-from datasets import SentenceClassificationDataset, SentencePairDataset, \
+
+from smart_regularization import smart_regularization
+from transformers import RobertaTokenizer, RobertaModel
+
+from preprocessing.datasets import SentenceClassificationDataset, SentencePairDataset, \
     load_multitask_data, load_multitask_test_data
 
 from evaluation import model_eval_multitask, test_model_multitask, \
     model_eval_paraphrase, model_eval_sts, model_eval_sentiment
+
+
+from torch.utils.tensorboard import SummaryWriter
 
 
 TQDM_DISABLE = False
@@ -51,9 +58,15 @@ def seed_everything(seed=11711):
     torch.backends.cudnn.deterministic = True
 
 
-BERT_HIDDEN_SIZE = 768
+BERT_HIDDEN_SIZE = 1024
 N_SENTIMENT_CLASSES = 5
 N_STS_CLASSES = 6
+
+def get_term_width():
+    try:
+        return os.get_terminal_size().columns
+    except OSError:
+        return 80
 
 
 class MultitaskBERT(nn.Module):
@@ -68,8 +81,22 @@ class MultitaskBERT(nn.Module):
         super(MultitaskBERT, self).__init__()
         # You will want to add layers here to perform the downstream tasks.
         # Pretrain mode does not require updating bert paramters.
-        self.bert = BertModel.from_pretrained("bert-base-uncased")
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        if args.transformer == 'bert-large':
+            self.bert = BertModel.from_pretrained("bert-large-uncased")
+            self.tokenizer = BertTokenizer.from_pretrained('bert-large-uncased')
+            BERT_HIDDEN_SIZE = 1024
+        elif args.transformer == 'roberta-large':
+            self.bert = RobertaModel.from_pretrained("roberta-large-mnli")
+            self.tokenizer = RobertaTokenizer.from_pretrained('roberta-large-mnli')
+            BERT_HIDDEN_SIZE = 1024
+        elif args.transformer == 'roberta':
+            self.bert = RobertaModel.from_pretrained("roberta-base")
+            self.tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
+            BERT_HIDDEN_SIZE = 768
+        else:
+            self.bert = BertModel.from_pretrained("bert-base-uncased")
+            self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+            BERT_HIDDEN_SIZE = 768
         for param in self.bert.parameters():
             if config.option == 'finetune':
                 param.requires_grad = True
@@ -105,22 +132,15 @@ class MultitaskBERT(nn.Module):
         # (e.g., by adding other layers).
         
         # Step 1: Get the BERT embeddings
+        # TODO: Fix for non-PAL
         bert_output = self.bert(input_ids, attention_mask, task_id)
 
         # Step 2: Get the [CLS] token embeddings
         cls_embeddings = bert_output['pooler_output']
         return cls_embeddings
 
-
-    def predict_sentiment(self, input_ids, attention_mask):
-        '''Given a batch of sentences, outputs logits for classifying sentiment.
-        There are 5 sentiment classes:
-        (0 - negative, 1- somewhat negative, 2- neutral, 3- somewhat positive, 4- positive)
-        Thus, your output should contain 5 logits for each sentence.
-        '''
-        # Step 1: Get the BERT embeddings
-        x = self.forward(input_ids, attention_mask, task_id=0)
-
+    def last_layers_sentiment(self, x):
+        """Given a batch of sentences embeddings, outputs logits for classifying sentiment."""
         # Step 2: Hidden layers
         for i in range(len(self.linear_sentiment) - 1):
             x = self.dropout_sentiment[i](x)
@@ -131,17 +151,21 @@ class MultitaskBERT(nn.Module):
         x = self.dropout_sentiment[-1](x)
         logits = self.linear_sentiment[-1](x)
         # logits = F.softmax(logits, dim=1)
-
         return logits
-
-
-    def predict_paraphrase(self,
-                           input_ids_1, attention_mask_1,
-                           input_ids_2, attention_mask_2):
-        '''Given a batch of pairs of sentences, outputs a single logit for predicting whether they are paraphrases.
-        Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
-        during evaluation, and handled as a logit by the appropriate loss function.
+    
+    def predict_sentiment(self, input_ids, attention_mask):
+        '''Given a batch of sentences, outputs logits for classifying sentiment.
+        There are 5 sentiment classes:
+        (0 - negative, 1- somewhat negative, 2- neutral, 3- somewhat positive, 4- positive)
+        Thus, your output should contain 5 logits for each sentence.
         '''
+        # Step 1: Get the BERT embeddings
+        x = self.forward(input_ids, attention_mask, task_id=0)
+        return self.last_layers_sentiment(x)
+
+    def get_similarity_paraphrase_embeddings(self, input_ids_1, attention_mask_1,
+                           input_ids_2, attention_mask_2, task_id):
+        '''Given a batch of pairs of sentences, get the BERT embeddings.'''
         # Step 0: Get [SEP] token ids
         sep_token_id = torch.tensor([self.tokenizer.sep_token_id], dtype=torch.long, device=input_ids_1.device)
         batch_sep_token_id = sep_token_id.repeat(input_ids_1.shape[0], 1)
@@ -151,39 +175,37 @@ class MultitaskBERT(nn.Module):
         attention_mask = torch.cat((attention_mask_1, torch.ones_like(batch_sep_token_id), attention_mask_2, torch.ones_like(batch_sep_token_id)), dim=1)
 
         # Step 2: Get the BERT embeddings
-        x = self.forward(input_id, attention_mask, task_id=1)
+        x = self.forward(input_id, attention_mask, task_id=task_id)
 
-        # Step 3: Hidden layers
+        return x
+    
+    def last_layers_paraphrase(self, x):
+        """Given a batch of pairs of sentences embedding, outputs logits for predicting whether they are paraphrases."""
+        #Step 2: Hidden layers
         for i in range(len(self.linear_paraphrase) - 1):
             x = self.dropout_paraphrase[i](x)
             x = self.linear_paraphrase[i](x)
             x = F.relu(x)
 
-        # Step 4: Final layer
+        # Step 3: Final layer
         x = self.dropout_paraphrase[-1](x)
         logits = self.linear_paraphrase[-1](x)
         # logits = torch.sigmoid(logits)
-
         return logits
 
-
-    def predict_similarity(self,
+    def predict_paraphrase(self,
                            input_ids_1, attention_mask_1,
                            input_ids_2, attention_mask_2):
         '''Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
         Note that your output should be unnormalized (a logit).
         '''
-        # Step 0: Get [SEP] token ids
-        sep_token_id = torch.tensor([self.tokenizer.sep_token_id], dtype=torch.long, device=input_ids_1.device)
-        batch_sep_token_id = sep_token_id.repeat(input_ids_1.shape[0], 1)
+        # Step 1: Get the BERT embeddings
+        x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2, task_id=1)
+        return self.last_layers_paraphrase(x)
 
-        # Step 1: Concatenate the two sentences in: sent1 [SEP] sent2 [SEP]
-        input_id = torch.cat((input_ids_1, batch_sep_token_id, input_ids_2, batch_sep_token_id), dim=1)
-        attention_mask = torch.cat((attention_mask_1, torch.ones_like(batch_sep_token_id), attention_mask_2, torch.ones_like(batch_sep_token_id)), dim=1)
 
-        # Step 2: Get the BERT embeddings
-        x = self.forward(input_id, attention_mask, task_id=2)
-
+    def last_layers_similarity(self, x):
+        """Given a batch of pairs of sentences embeddings, outputs logits for predicting how similar they are."""
         # Step 3: Hidden layers
         for i in range(len(self.linear_similarity) - 1):
             x = self.dropout_similarity[i](x)
@@ -198,8 +220,18 @@ class MultitaskBERT(nn.Module):
         # # If we are evaluating, then we cap the predictions to the range [0, 5]
         # if not self.training:
         #     preds = torch.clamp(preds, 0, 5)
-
         return preds
+    
+    def predict_similarity(self,
+                           input_ids_1, attention_mask_1,
+                           input_ids_2, attention_mask_2):
+        '''Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
+        Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
+        during evaluation, and handled as a logit by the appropriate loss function.
+        '''
+        # Step 1 : Get the BERT embeddings
+        x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2, task_id=2)
+        return self.last_layers_similarity(x)
 
 
 class ObjectsGroup:
@@ -310,14 +342,37 @@ class PalScheduler(Scheduler):
         self.sizes = np.array([len(dataloaders[dataset]) for dataset in self.names])
         self.reset()
 
-    def process_one_batch(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict):
-        alpha = 1 - 0.8 * (epoch - 1) / (num_epochs - 1)
+    def process_one_batch(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict, apply_optimization: bool = True):
+        alpha = 0.2
+        if num_epochs > 1: alpha = 1 - 0.8 * (epoch - 1) / (num_epochs - 1) 
         probs = self.sizes ** alpha
         probs /= np.sum(probs)
 
         # Sample a dataset
         name = np.random.choice(self.names, p=probs)
-        return name, self.process_named_batch(objects_group, args, name)
+        return name, self.process_named_batch(objects_group, args, name, apply_optimization=apply_optimization)
+
+    def process_several_batches_with_control(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict, num_batches: int):
+        # First come up with a schedule
+        schedule = ['sst', 'para', 'sts']
+        alpha = 0.2
+        if num_epochs > 1: alpha = 1 - 0.8 * (epoch - 1) / (num_epochs - 1) 
+        probs = self.sizes ** alpha
+        probs /= np.sum(probs)
+        probs_biased = (probs * num_batches - 1) / (num_batches - 3)
+        probs_biased = np.clip(probs_biased, 0.025, 1)
+        probs_biased /= np.sum(probs_biased)
+        schedule += np.random.choice(self.names, p=probs_biased, size=num_batches - 3).tolist()
+        random.shuffle(schedule) # Shuffle the schedule
+
+        # Process the batches
+        losses = []
+        for task in schedule:
+            loss = self.process_named_batch(objects_group, args, task, apply_optimization=False)
+            losses.append(loss)
+        return schedule, losses
+
+
 
 
 def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
@@ -328,11 +383,17 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
         b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
 
-        logits = model.predict_sentiment(b_ids, b_mask)
+        embeddings = model.forward(b_ids, b_mask, task_id=0)
+        logits = model.last_layers_sentiment(embeddings)
+        
         loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
-        objects_group.loss_sum += loss_value
         
+        if args.use_smart_regularization:
+            smart_regularization(loss_value, args.smart_weight_regularization, embeddings, logits, model.last_layers_sentiment)
+
+        objects_group.loss_sum += loss_value
+
         if args.projection == "none":
             if args.use_amp: scaler.scale(loss).backward()
             else: loss.backward()
@@ -347,9 +408,14 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'], batch['attention_mask_1'], batch['token_ids_2'], batch['attention_mask_2'], batch['labels'])
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
 
-        preds = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2, task_id=1)
+        preds = model.last_layers_paraphrase(embeddings)
         loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum') / args.batch_size
         loss_value = loss.item()
+
+        if args.use_smart_regularization:
+            smart_regularization(loss_value, args.smart_weight_regularization, embeddings, preds, model.last_layers_paraphrase)
+
         objects_group.loss_sum += loss_value
         
         if args.projection == "none":
@@ -366,12 +432,17 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'], batch['attention_mask_1'], batch['token_ids_2'], batch['attention_mask_2'], batch['labels'])
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
 
-        preds = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2, task_id=2)
+        preds = model.last_layers_similarity(embeddings)
         if args.use_sigmoid_in_eval:
             loss = F.binary_cross_entropy_with_logits(preds.sigmoid().view(-1), b_labels.float().sigmoid(), reduction='sum') / args.batch_size
         else:
             loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
+
+        if args.use_smart_regularization:
+            smart_regularization(loss_value, args.smart_weight_regularization, embeddings, preds, model.last_layers_similarity)
+
         objects_group.loss_sum += loss_value
         
         if args.projection == "none":
@@ -420,10 +491,11 @@ def save_model(model, optimizer, args, config, filepath):
     return filepath
 
 
-def train_multitask(args):
+def train_multitask(args, writer):
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
     # Load data
-    # Create the data and its corresponding datasets and dataloader
+    # Create the data and its corresponding datasets and dataloaders
+
     sst_train_data, num_labels,para_train_data, sts_train_data = load_multitask_data(args.sst_train,args.para_train,args.sts_train, split ='train')
     sst_dev_data, num_labels,para_dev_data, sts_dev_data = load_multitask_data(args.sst_dev,args.para_dev,args.sts_dev, split ='train')
     print("")
@@ -509,8 +581,54 @@ def train_multitask(args):
         scheduler = PalScheduler(dataloaders)
     elif args.task_scheduler == 'random':
         scheduler = RandomScheduler(dataloaders)
+    elif args.task_scheduler in ['sts', 'sst', 'para']:
+        # If we are using a single task, we don't need a scheduler
+        scheduler = RandomScheduler(dataloaders)
+        task = args.task_scheduler
+        n_batches = 0
+        best_dev_acc = -np.inf
+
+        for epoch in range(args.epochs):
+            model.train()
+            for i in tqdm(range(args.num_batches_per_epoch), desc=task + ' epoch ' + str(epoch), disable=TQDM_DISABLE, smoothing=0):
+                loss = scheduler.process_named_batch(objects_group, args, name=task)
+                n_batches += 1
+                if not args.no_tensorboard:
+                    writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
+                    writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * n_batches)
+
+            # Evaluate on dev set
+            dev_acc = 0
+            if task == 'sst': dev_acc, _, _, _ = model_eval_sentiment(sst_dev_dataloader, model, device)
+            elif task == 'para': dev_acc, _, _, _ = model_eval_paraphrase(para_dev_dataloader, model, device)
+            elif task == 'sts': dev_acc, _, _, _ = model_eval_sts(sts_dev_dataloader, model, device)
+
+            color_score, saved = Colors.BLUE, True
+            if dev_acc > best_dev_acc:
+                best_dev_acc = dev_acc
+                saved_path = save_model(model, optimizer, args, config, args.filepath)
+                color_score, saved = Colors.PURPLE, True
+
+            if not args.no_tensorboard:
+                writer.add_scalar("Dev Acc " + task, dev_acc, args.batch_size * n_batches)
+
+            # Print dev accuracy
+            terminal_width = get_term_width()
+            spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
+            end_print = f'{"Saved":>{25 + spaces_per_task}}' if saved else ""
+            print(Colors.BOLD + color_score + f'{"Cur acc dev: ":<20}'   + Colors.END + color_score + f"{dev_acc:.3f}" + " " * spaces_per_task
+                + Colors.BOLD + color_score + f'{" Best acc dev: ":<20}' + Colors.END + color_score + f"{best_dev_acc:.3f}"
+                + end_print + Colors.END)
+        print("-" * terminal_width)
+        print('\n\n')
+        return
+
+            
 
 
+    # Loss logs
+    train_loss_logs_epochs = {'sst': [], 'para': [], 'sts': []}
+    dev_acc_logs_epochs = {'sst': [], 'para': [], 'sts': []}
 
     # ==================== THIS IS INDIVIDUAL PRETRAINING ====================
 
@@ -520,29 +638,48 @@ def train_multitask(args):
     # At the end, we load the best state for each task and evaluate the model on the dev set (multitask)
 
     if args.option == 'individual_pretrain':
-        saved_path = save_model(model, optimizer, args, config, args.filepath)
+        n_batches = 0
+        num_batches_per_epoch = args.num_batches_per_epoch if args.num_batches_per_epoch > 0 else len(sst_train_dataloader)
         # Dict to train each task separately
-        infos = {'sst': {'num_batches': len(sst_train_dataloader), 'eval_fn': model_eval_sentiment, 'dev_dataloader': sst_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_sentiment},
-                'para': {'num_batches': len(para_train_dataloader), 'eval_fn': model_eval_paraphrase, 'dev_dataloader': para_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_paraphrase},
-                'sts':  {'num_batches': len(sts_train_dataloader), 'eval_fn': model_eval_sts, 'dev_dataloader': sts_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_similarity}}
-        
-        for task in ['sst', 'sts']:
-            optimizer = AdamW(model.parameters(), lr=lr)
-            terminal_width = os.get_terminal_size().columns
-            last_improv = -1
-            print(Colors.BOLD + f'{"     Individually Pretraining " + task + "     ":-^{os.get_terminal_size().columns}}' + Colors.END)
-            for epoch in range(args.epochs):
+        infos = {'sst': {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_sentiment, 'dev_dataloader': sst_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_sentiment, 'optimizer': AdamW(model.parameters(), lr=lr), "last_improv": -1, 'first': True, 'first_loss': True},
+                'para': {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_paraphrase, 'dev_dataloader': para_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_paraphrase, 'optimizer': AdamW(model.parameters(), lr=lr), "last_improv": -1, 'first': True, 'first_loss': True},
+                'sts':  {'num_batches': num_batches_per_epoch, 'eval_fn': model_eval_sts, 'dev_dataloader': sts_dev_dataloader, 'best_dev_acc': 0, 'best_model': None, 'layer': model.linear_similarity, 'optimizer': AdamW(model.parameters(), lr=lr), "last_improv": -1, 'first': True, 'first_loss': True}}
+        total_num_batches = {'sst': 0, 'para': 0, 'sts': 0}
+
+        for epoch in range(args.epochs):
+            print(Colors.BOLD + f'{"Epoch " + str(epoch):^{get_term_width()}}' + Colors.END)
+            for task in ['sst', 'sts', 'para']:
+                if epoch - infos[task]['last_improv'] > args.patience:
+                    print(Colors.BOLD + Colors.RED + f'{"Early stopping " + task:^{get_term_width()}}' + Colors.END)
+                    continue
+                model.train()
+                objects_group.optimizer = infos[task]['optimizer']
+                terminal_width = get_term_width()
                 for i in tqdm(range(infos[task]['num_batches']), desc=task + ' epoch ' + str(epoch), disable=TQDM_DISABLE, smoothing=0):
                     loss = scheduler.process_named_batch(name=task, objects_group=objects_group, args=args)
+                    total_num_batches[task] += 1
+                    n_batches += 1
+                    if not args.no_tensorboard:
+                        if infos[task]['first']:
+                            writer.add_scalar("Loss " + task, loss.item(), 0)
+                            infos[task]['first'] = False
+                        writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
+                        writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * total_num_batches[task])
                 
                 # Evaluate on dev set
                 color_score, saved = Colors.BLUE, False
-                dev_acc, _, _ = infos[task]['eval_fn'](infos[task]['dev_dataloader'], model, device)
+                dev_acc, _, _, _ = infos[task]['eval_fn'](infos[task]['dev_dataloader'], model, device)
                 if dev_acc > infos[task]['best_dev_acc']:
                     infos[task]['best_dev_acc'] = dev_acc
                     infos[task]['best_model'] = copy.deepcopy(infos[task]['layer'].state_dict())
                     color_score, saved = Colors.PURPLE, True
-                    last_improv = epoch
+                    infos[task]['last_improv'] = epoch
+                if not args.no_tensorboard: 
+                    writer.add_scalar("[EPOCH] Dev accuracy " + task, dev_acc, epoch)
+                    if infos[task]['first_loss']:
+                        infos[task]['first_loss'] = False
+                        writer.add_scalar("Dev accuracy " + task, dev_acc, 0)
+                    writer.add_scalar("Dev accuracy " + task, dev_acc, args.batch_size * n_batches)
                 
                 # Print dev accuracy
                 spaces_per_task = int((terminal_width - 3*(20+7)) / 2)
@@ -550,11 +687,6 @@ def train_multitask(args):
                 print(Colors.BOLD + color_score + f'{"Cur acc dev: ":<20}'   + Colors.END + color_score + f"{dev_acc:.5f}" + " " * spaces_per_task
                     + Colors.BOLD + color_score + f'{" Best acc dev: ":<20}' + Colors.END + color_score + f"{infos[task]['best_dev_acc']:.5f}"
                     + end_print + Colors.END)
-
-                if epoch != args.epochs - 1: print("")
-                elif epoch - last_improv >= args.patience:
-                    print(Colors.BOLD + Colors.RED + f'{"Early stopping":^{os.get_terminal_size().columns}}' + Colors.END)
-                    break
             print("-" * terminal_width)
             print('\n\n')
 
@@ -563,10 +695,10 @@ def train_multitask(args):
             if infos[task]['best_model'] is not None: infos[task]['layer'].load_state_dict(infos[task]['best_model'])
         
         # Evaluate on dev set
-        print(Colors.BOLD + Colors.CYAN + f'{"     Evaluation Multitask     ":-^{os.get_terminal_size().columns}}' + Colors.END + Colors.CYAN)
-        (paraphrase_accuracy, para_y_pred, para_sent_ids,
-            sentiment_accuracy,sst_y_pred, sst_sent_ids,
-            sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, use_sigmoid=args.use_sigmoid_in_eval)
+        print(Colors.BOLD + Colors.CYAN + f'{"     Evaluation Multitask     ":-^{get_term_width()}}' + Colors.END + Colors.CYAN)
+        (paraphrase_accuracy, _, _,
+         sentiment_accuracy, _, _,
+         sts_corr, _, _) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, writer=writer, epoch=0, tensorboard=not args.no_tensorboard, use_sigmoid=args.use_sigmoid_in_eval)
         print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'    + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.5f}" + " " * spaces_per_task
             + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}'  + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.5f}" + " " * spaces_per_task
             + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'   + Colors.END + Colors.CYAN + f"{sts_corr:.5f}")
@@ -594,39 +726,118 @@ def train_multitask(args):
                                 int(len(sts_train_dataloader) / args.gradient_accumulations_sts)
     
     last_improv = -1
+    n_batches = 0
+    total_num_batches = {'sst': 0, 'para': 0, 'sts': 0}
+
+    # Initial losses
+    if not args.no_tensorboard:
+        for name in ['sst', 'sts', 'para']:
+            loss = scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=False)
+            writer.add_scalar("Loss " + name, loss.item(), 0)
+            writer.add_scalar("Specific Loss " + name, loss.item(), 0)
+
     for epoch in range(args.epochs):
-        print(Colors.BOLD + f'{"     Epoch " + str(epoch) + "     ":-^{os.get_terminal_size().columns}}' + Colors.END)
+        print(Colors.BOLD + f'{"     Epoch " + str(epoch) + "     ":-^{get_term_width()}}' + Colors.END)
         model.train()
         train_loss = {'sst': 0, 'para': 0, 'sts': 0}
         num_batches = {'sst': 0, 'para': 0, 'sts': 0}
 
         if args.projection != "none":
-            for i in tqdm(range(int(num_batches_per_epoch / 3)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
-                losses = []
-                for name in ['sst', 'sts', 'para']:
-                    losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=False))
-                    train_loss[name] += losses[-1].item()
-                    num_batches[name] += 1
-                optimizer.backward(losses)
-                optimizer.step()
+            ############ Gradient Surgery / Vaccine with scheduler ############
+            if args.task_scheduler == "pal":
+                if args.combine_strategy == "none":
+                    raise ValueError("PAL used with projection requires a combining strategy")
+                elif args.combine_strategy == "force":
+                    # This method consists of running X batches for each update.
+                    # The first 3 batches corresponds to the 3 tasks.
+                    # Then the scheduler is used to choose the next batches.
+                    nb_batches_per_update = 16
+                    for i in tqdm(range(int(num_batches_per_epoch / nb_batches_per_update)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
+                        losses = {'sst': 0, 'para': 0, 'sts': 0}
+                        for task in ['sst', 'sts', 'para']:
+                            loss = scheduler.process_named_batch(objects_group=objects_group, args=args, name=task, apply_optimization=False)
+                            losses[task] += loss
+                            num_batches[task] += 1
+                            n_batches += 1
+                            if not args.no_tensorboard:
+                                writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
+                                writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * total_num_batches[name])
+                        for j in range(nb_batches_per_update - 3):
+                            task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args, apply_optimization=False)
+                            losses[task] += loss#.item()
+                            num_batches[task] += 1
+                            n_batches += 1
+                            if not args.no_tensorboard:
+                                writer.add_scalar("Loss " + task, losses[task].item(), args.batch_size * n_batches)
+                                writer.add_scalar("Specific Loss " + task, losses[task].item(), args.batch_size * total_num_batches[name])
+                        losses_opt = [losses[task] / num_batches[task] for task in ['sst', 'sts', 'para']]
+                        optimizer.backward(losses_opt)
+                        optimizer.step()
+                elif args.combine_strategy == "encourage":
+                    # This method consists of running X batches for each update.
+                    # The probability of choosing a task is changed so that at least each task is chosen once.
+                    # But still follows the PAL scheduler.
+                    nb_batches_per_update = 16
+                    alpha = 0.2 + 0.8 * (epoch) / (args.epochs-1)
+                    for i in tqdm(range(int(num_batches_per_epoch / nb_batches_per_update)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
+                        losses = {'sst': 0, 'para': 0, 'sts': 0}
+                        tasks, losses_tasks = scheduler.process_several_batches_with_control(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args, num_batches=nb_batches_per_update)
+                        for j, task in enumerate(tasks):
+                            num_batches[task] += 1
+                            losses[task] += losses_tasks[j]
+                            n_batches += 1
+                            if not args.no_tensorboard:
+                                writer.add_scalar("Loss " + task, losses_tasks[j].item(), args.batch_size * n_batches)
+                                writer.add_scalar("Specific Loss " + task, losses_tasks[j].item(), args.batch_size * total_num_batches[name])
+                        losses = [losses[task] / num_batches[task]**alpha for task in ['sst', 'sts', 'para']]
+                        optimizer.backward(losses)
+                        optimizer.step()
+
+
+            else:
+                ############ Gradient Surgery / Vaccine without scheduler ############
+                for i in tqdm(range(int(num_batches_per_epoch / 3)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
+                    losses = []
+                    for j, name in enumerate(['sst', 'sts', 'para']):
+                        losses.append(scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=False))
+                        n_batches += 1
+                        train_loss[name] += losses[-1].item()
+                        num_batches[name] += 1
+                        total_num_batches[name] += 1
+                        if not args.no_tensorboard:
+                            writer.add_scalar("Loss " + name, losses[-1].item(), args.batch_size * n_batches)
+                            writer.add_scalar("Specific Loss " + name, losses[-1].item(), args.batch_size * total_num_batches[name])
+                    optimizer.backward(losses)
+                    optimizer.step()
         else:
+            ############ Scheduler without projection ############
             for i in tqdm(range(num_batches_per_epoch), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
                 task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args)
+                n_batches += 1
                 train_loss[task] += loss.item()
                 num_batches[task] += 1
+                total_num_batches[task] += 1
+                if not args.no_tensorboard:
+                    writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
+                    writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * total_num_batches[task])
 
         # Compute average train loss
         for task in train_loss:
             train_loss[task] = 0 if num_batches[task] == 0 else train_loss[task] / num_batches[task]
+            train_loss_logs_epochs[task].append(train_loss[task])
 
         # Eval on dev
-        (paraphrase_accuracy, para_y_pred, para_sent_ids,
-        sentiment_accuracy,sst_y_pred, sst_sent_ids,
-        sts_corr, sts_y_pred, sts_sent_ids) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, use_sigmoid=args.use_sigmoid_in_eval)
-        
+        (paraphrase_accuracy, _, _,
+        sentiment_accuracy,_, _,
+        sts_corr, _, _) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, writer=writer, epoch=epoch, tensorboard=not args.no_tensorboard, use_sigmoid=args.use_sigmoid_in_eval)
+
         # Useful for deg
         # paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
 
+        #We keep track of the accuracies for each task for each epoch
+        dev_acc_logs_epochs['sst'].append(sentiment_accuracy)
+        dev_acc_logs_epochs['para'].append(paraphrase_accuracy)
+        dev_acc_logs_epochs['sts'].append(sts_corr)
         # Computes relative improvement compared to a random baseline and to the best model so far
         # So 0, corresponds to a random baseline and 1 to the best model so far
         random_accuracies = {'sst': 1./N_SENTIMENT_CLASSES, 'para': 0.5, 'sts': 0.}
@@ -638,6 +849,31 @@ def train_multitask(args):
 
         # Computes arithmetic average of the accuracies (used for the leaderboard)
         arithmetic_mean_acc = (paraphrase_accuracy + sentiment_accuracy + sts_corr) / 3
+        
+        # Write to tensorboard
+        if not args.no_tensorboard: 
+            writer.add_scalar("[EPOCH] Dev accuracy sst", sentiment_accuracy, epoch)
+            writer.add_scalar("[EPOCH] Dev accuracy para", paraphrase_accuracy, epoch)
+            writer.add_scalar("[EPOCH] Dev accuracy sts", sts_corr, epoch)
+            writer.add_scalar("[EPOCH] Dev accuracy mean", arithmetic_mean_acc, epoch)
+            writer.add_scalar("[EPOCH] Num batches sst", num_batches['sst'], epoch)
+            writer.add_scalar("[EPOCH] Num batches para", num_batches['para'], epoch)
+            writer.add_scalar("[EPOCH] Num batches sts", num_batches['sts'], epoch)
+            if epoch == 0:
+                writer.add_scalar("Dev accuracy sst", sentiment_accuracy, 0)
+                writer.add_scalar("Dev accuracy para", paraphrase_accuracy, 0)
+                writer.add_scalar("Dev accuracy sts", sts_corr, 0)
+                writer.add_scalar("Dev accuracy mean", arithmetic_mean_acc, 0)
+                writer.add_scalar("Num batches sst", num_batches['sst'], 0)
+                writer.add_scalar("Num batches para", num_batches['para'], 0)
+                writer.add_scalar("Num batches sts", num_batches['sts'], 0)
+            writer.add_scalar("Dev accuracy sst", sentiment_accuracy, args.batch_size * n_batches)
+            writer.add_scalar("Dev accuracy para", paraphrase_accuracy, args.batch_size * n_batches)
+            writer.add_scalar("Dev accuracy sts", sts_corr, args.batch_size * n_batches)
+            writer.add_scalar("Dev accuracy mean", arithmetic_mean_acc, args.batch_size * n_batches)
+            writer.add_scalar("Num batches sst", num_batches['sst'], args.batch_size * n_batches)
+            writer.add_scalar("Num batches para", num_batches['para'], args.batch_size * n_batches)
+            writer.add_scalar("Num batches sts", num_batches['sts'], args.batch_size * n_batches)
 
         # Saves model if it is the best one so far on the dev set
         color_score, saved = Colors.BLUE, False
@@ -649,7 +885,7 @@ def train_multitask(args):
             color_score, saved = Colors.PURPLE, True
             last_improv = epoch
 
-        terminal_width = os.get_terminal_size().columns
+        terminal_width = get_term_width()
         spaces_per_task = int((terminal_width - 3*(20+7)) / 2)
         print(Colors.BOLD + f'{"Num batches SST: ":<20}'   + Colors.END + f"{num_batches['sst']:<5}" + " " * spaces_per_task
             + Colors.BOLD + f'{" Num batches Para: ":<20}' + Colors.END + f"{num_batches['para']:<5}" + " " * spaces_per_task
@@ -673,9 +909,20 @@ def train_multitask(args):
         print("")
 
         if epoch - last_improv >= args.patience:
-            print(Colors.BOLD + Colors.RED + f'{"Early stopping":^{os.get_terminal_size().columns}}' + Colors.END)
+            print(Colors.BOLD + Colors.RED + f'{"Early stopping":^{get_term_width()}}' + Colors.END)
             break
-
+    
+    if args.save_loss_acc_logs:
+        # Write train_loss_logs_epochs to file
+        with open(args.log_dir + '/train_loss.txt', 'w') as f:
+            # Loop through the dictionary items and write them to the file
+            for key, value in train_loss_logs_epochs.items():
+                f.write('{}: {}\n'.format(key, value))
+        #Write dev_acc_logs_epochs to file
+        with open(args.log_dir + '/dev_acc.txt', 'w') as f:
+            # Loop through the dictionary items and write them to the file
+            for key, value in dev_acc_logs_epochs.items():
+                f.write('{}: {}\n'.format(key, value))
 
 
 def load_model(model, filepath):
@@ -727,6 +974,8 @@ def get_args():
     parser.add_argument("--sts_dev", type=str, default="data/sts-dev.csv")
     parser.add_argument("--sts_test", type=str, default="data/sts-test-student.csv")
 
+    parser.add_argument("--no_tensorboard", action='store_true', help="Dont log to tensorboard")
+    parser.add_argument("--save_path", type=str, default="runs/my_model", help="Path to save the model and logs")
     parser.add_argument("--seed", type=int, default=11711)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--option", type=str,
@@ -735,36 +984,73 @@ def get_args():
     parser.add_argument("--pretrained_model_name", type=str, default="none")
     parser.add_argument("--use_gpu", action='store_true')
 
-    parser.add_argument("--sst_dev_out", type=str, default="predictions/sst-dev-output.csv")
-    parser.add_argument("--sst_test_out", type=str, default="predictions/sst-test-output.csv")
+    parser.add_argument("--sst_dev_out", type=str, default="/predictions/sst-dev-output.csv")
+    parser.add_argument("--sst_test_out", type=str, default="/predictions/sst-test-output.csv")
 
-    parser.add_argument("--para_dev_out", type=str, default="predictions/para-dev-output.csv")
-    parser.add_argument("--para_test_out", type=str, default="predictions/para-test-output.csv")
+    parser.add_argument("--para_dev_out", type=str, default="/predictions/para-dev-output.csv")
+    parser.add_argument("--para_test_out", type=str, default="/predictions/para-test-output.csv")
 
-    parser.add_argument("--sts_dev_out", type=str, default="predictions/sts-dev-output.csv")
-    parser.add_argument("--sts_test_out", type=str, default="predictions/sts-test-output.csv")
+    parser.add_argument("--sts_dev_out", type=str, default="/predictions/sts-dev-output.csv")
+    parser.add_argument("--sts_test_out", type=str, default="/predictions/sts-test-output.csv")
+
+    #Arugment to save logs through the epochs (train loss and dev accuracy)
+    parser.add_argument("--save_loss_acc_logs", type=bool, default=False)
+
     # hyper parameters
-    parser.add_argument("--batch_size", help='This is the simulated batch size using gradient accumulations', type=int, default=256)
+    parser.add_argument("--transformer", type=str, choices=('bert', 'roberta', 'bert-large', 'roberta-large'), default="bert")
+    parser.add_argument("--batch_size", help='This is the simulated batch size using gradient accumulations', type=int, default=128)
     parser.add_argument("--hidden_dropout_prob", type=float, default=0.2)
     parser.add_argument("--n_hidden_layers", type=int, default=2, help="Number of hidden layers for the classifier")
     parser.add_argument("--lr", type=float, help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
                         default=1e-5)
     parser.add_argument("--num_batches_per_epoch", type=int, default=-1)
-    parser.add_argument("--task_scheduler", type=str, choices=('random', 'round_robin', 'pal'), default="round_robin")
+    parser.add_argument("--task_scheduler", type=str, choices=('random', 'round_robin', 'pal', 'para', 'sts', 'sst'), default="round_robin")
 
     # Optimizations
     parser.add_argument("--use_sigmoid_in_eval", action='store_true')
     parser.add_argument("--use_pal", action='store_true', help="Use additionnal PAL in BERT layers")
     parser.add_argument("--no_train_classifier", action='store_true')
+    parser.add_argument("--combine_strategy", type=str, choices=('none', 'encourage', 'force'), default="none")
     parser.add_argument("--use_amp", action='store_true')
-    parser.add_argument("--max_batch_size_sst", type=int, default=64)
-    parser.add_argument("--max_batch_size_para", type=int, default=32)
-    parser.add_argument("--max_batch_size_sts", type=int, default=64)
+    parser.add_argument("--max_batch_size_sst", type=int, default=32)
+    parser.add_argument("--max_batch_size_para", type=int, default=16)
+    parser.add_argument("--max_batch_size_sts", type=int, default=32)
     parser.add_argument("--projection", type=str, choices=('none', 'pcgrad', 'vaccine'), default="none")
     parser.add_argument("--beta_vaccine", type=float, default=1e-2)
     parser.add_argument("--patience", type=int, help="Number maximum of epochs without improvement", default=5)
+    parser.add_argument("--use_preprocessing_lengths", action='store_true')
+    parser.add_argument("--use_smart_regularization", action='store_true')
+    parser.add_argument("--smart_weight_regularization", type=float, default=1e-2)
 
     args = parser.parse_args()
+
+    # Set the preprocessed training datasets
+    if args.use_preprocessing_lengths:
+        args.sst_train = "data/preprocessed_data/preprocessed-ids-sst-train.csv"
+        args.para_train = "data/preprocessed_data/preprocessed-quora-train.csv"
+        args.sts_train = "data/preprocessed_data/preprocessed-sts-train.csv"
+        
+    # Logs the command to recreate the same run with all the arguments
+    s = "python3 multitask_classifier.py"
+    for arg in vars(args):
+        value = getattr(args, arg)
+        if type(value) == bool:
+            if value:
+                s += f" --{arg}"
+        else:
+            s += f" --{arg} {value}"
+    print("\n" + Colors.BOLD + "Command to recreate this run:" + Colors.END + s + "\n")
+
+    # Saves s in args.log_dir/command.txt
+
+    if args.save_path == "runs/my_model":
+        writer = SummaryWriter()
+    else:
+        writer = SummaryWriter(args.save_path)
+    args.log_dir = writer.log_dir # Get the path of the folder where TensorBoard logs will be saved
+    with open(os.path.join(args.log_dir, "command.txt"), "w") as f:
+        f.write(s)
+
 
     # Makes sure that the actual batch sizes are not too large
     # Gradient accumulations are used to simulate larger batch sizes
@@ -781,7 +1067,7 @@ def get_args():
     print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = print_length, var_length = 20)
     print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name", "no_train_classifier", "use_sigmoid_in_eval"], color = Colors.CYAN, print_length = print_length, var_length = 25)
 
-    hyperparameters = ["n_hidden_layers", "batch_size", "epochs", "lr", "hidden_dropout_prob", "seed"]
+    hyperparameters = ["n_hidden_layers", "batch_size", "epochs", "lr", "hidden_dropout_prob", "seed", "transformer"]
     if args.option == "finetune": hyperparameters += ["num_batches_per_epoch"]
     print_subset_of_args(args, "HYPERPARAMETERS", hyperparameters, color = Colors.GREEN, print_length = print_length, var_length = 30)
     
@@ -827,8 +1113,6 @@ def get_args():
             warn("Pretraining mode does not support task scheduler (Each task is trained separately)")
         if args.projection != "none":
             warn("Pretraining mode does not support projection (Each task is trained separately)")
-        if args.num_batches_per_epoch != -1:
-            warn("Pretraining mode does not support num_batches_per_epoch (One peoch is a full pass through the dataset)")
         if args.beta_vaccine != 1e-2:
             warn("Pretraining mode does not support beta_vaccine (Each task is trained separately)")
         
@@ -837,16 +1121,20 @@ def get_args():
         if args.projection != "vaccine" and args.beta_vaccine != 1e-2:
             warn("Beta for Vaccine is only used when Vaccine is used")
         if args.projection != "none" and args.task_scheduler != "round_robin":
-            warn("PCGrad & Vaccine do not use task scheduler")
+            if args.combine_strategy == "none":
+                warn("Combined method is not specified. It should be specified when using projection and PAL")
+                raise ValueError("Combined method is not specified. It should be specified when using projection and PAL")
+            warn("[EXPERIMENTAL] PCGrad & Vaccine use combined methods", color=Colors.YELLOW)
 
-    return args
+    return args, writer
 
 
 
 if __name__ == "__main__":
-    args = get_args()
-    args.filepath = f'{args.option}-{args.epochs}-{args.lr}-multitask.pt' # save path
+    args, writer = get_args()
+    args.filepath = args.log_dir + "/best-model.pt"
+    print("Saving model to: ", args.filepath)
     seed_everything(args.seed)  # fix the seed for reproducibility
-    if args.option != "test": train_multitask(args)
+    if args.option != "test": train_multitask(args, writer)
     if args.option == "test": args.filepath = args.pretrained_model_name
     if args.option != "pretrain" and args.option != 'individual_pretrain': test_model(args)
