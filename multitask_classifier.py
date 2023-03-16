@@ -924,20 +924,18 @@ if __name__ == "__main__":
     #######################################################
     #Set tuner arguments
     #######################################################
-    tuner = tune.run(
-        train_multitask,
-        config=search_space,
-        max_failures=100,
-        resources_per_trial={'gpu': 1},
-        num_samples=2,  #set the number of hyperparameter combinations to try out
-        metric='accuracy',
-        mode='max',
-    )
-    best_config = tuner.get_best_config(metric="accuracy", mode="max")
-    print('best trial config', best_config)
-
-    #set up raytune with gpu
-
-    # if args.option != "test": train_multitask(args)
-    # if args.option == "test": args.filepath = args.pretrained_model_name
-    # if args.option != "pretrain" and args.option != 'individual_pretrain': test_model(args)
+    if args.option != "test":
+        tuner = tune.run(
+            train_multitask,
+            config=search_space,
+            max_failures=100,
+            resources_per_trial={'gpu': 1},
+            num_samples=2,  #set the number of hyperparameter combinations to try out
+            metric='accuracy',
+            mode='max',
+        )
+        best_config = tuner.get_best_config(metric="accuracy", mode="max")
+        print('best trial config', best_config)
+    
+    if args.option == "test": args.filepath = args.pretrained_model_name
+    if args.option != "pretrain" and args.option != 'individual_pretrain': test_model(args)
