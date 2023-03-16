@@ -133,7 +133,10 @@ class MultitaskBERT(nn.Module):
         
         # Step 1: Get the BERT embeddings
         # TODO: Fix for non-PAL
-        bert_output = self.bert(input_ids, attention_mask, task_id)
+        if isinstance(self.bert, BertModelWithPAL):
+            bert_output = self.bert(input_ids, attention_mask, task_id)
+        else:
+            bert_output = self.bert(input_ids, attention_mask)
 
         # Step 2: Get the [CLS] token embeddings
         cls_embeddings = bert_output['pooler_output']
