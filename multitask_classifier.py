@@ -1021,7 +1021,8 @@ def get_args():
         args.sts_train = "data/preprocessed_data/preprocessed-sts-train.csv"
 
     # Logs the command to recreate the same run with all the arguments
-    print("\n" + Colors.BOLD + "Command to recreate this run:" + Colors.END + args_to_command_line(args) + "\n")
+    s = args_to_command_line(args)
+    print("\n" + Colors.BOLD + "Command to recreate this run:" + Colors.END + s + "\n")
 
     # Saves s in args.log_dir/command.txt
     if args.save_path == "runs/my_model":
