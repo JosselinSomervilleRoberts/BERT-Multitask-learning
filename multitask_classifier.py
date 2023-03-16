@@ -462,10 +462,25 @@ def train_multitask(args):
 
     model = MultitaskBERT(config)
     bert_config = BertConfig()
-    BertModelWithPAL.from_BertModel(model.bert, bert_config)
 
-    if args.pretrained_model_name != "none":
+    if args.use_pal:
+        # Here we try to either:
+        # - load a pretrained model with PAL layers (firt convert to BertModelWithPAL, then load the model)
+        # - load a pretrained model without PAL layers (first load the model, then convert to BertModelWithPAL)
+        try:
+            BertModelWithPAL.from_BertModel(model.bert, bert_config)
+            if args.pretrained_model_name != "none":
+                config = load_model(model, args.pretrained_model_name)
+            print(Colors.GREEN + "Loaded pretrained model with PAL layers" + Colors.END)
+        except Exception as e:
+            print(Colors.YELLOW + "Warning: could not load pretrained model with PAL layers, trying to load without PAL layers" + Colors.END)
+            if args.pretrained_model_name != "none":
+                config = load_model(model, args.pretrained_model_name)
+            model.bert = BertModelWithPAL.from_BertModel(model.bert, bert_config)
+    elif args.pretrained_model_name != "none":
         config = load_model(model, args.pretrained_model_name)
+
+    # Put model on GPU
     model = model.to(device)
 
     lr = args.lr
@@ -676,7 +691,8 @@ def test_model(args):
 
         model = MultitaskBERT(config)
         bert_config = BertConfig()
-        BertModelWithPAL.from_BertModel(model.bert, bert_config)
+        if args.use_pal:
+            BertModelWithPAL.from_BertModel(model.bert, bert_config)
         model.load_state_dict(saved['model'])
         model = model.to(device)
         print(f"Loaded model to test from {args.filepath}")
@@ -734,6 +750,7 @@ def get_args():
     parser.add_argument("--task_scheduler", type=str, choices=('random', 'round_robin', 'pal'), default="round_robin")
 
     # Optimizations
+    parser.add_argument("--use_pal", action='store_true', help="Use additionnal PAL in BERT layers")
     parser.add_argument("--no_train_classifier", action='store_true')
     parser.add_argument("--use_amp", action='store_true')
     parser.add_argument("--max_batch_size_sst", type=int, default=64)
@@ -764,7 +781,7 @@ def get_args():
     if args.option == "finetune": hyperparameters += ["num_batches_per_epoch"]
     print_subset_of_args(args, "HYPERPARAMETERS", hyperparameters, color = Colors.GREEN, print_length = print_length, var_length = 30)
     
-    optim_args = ["use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts", "patience"]
+    optim_args = ["use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts", "patience", "use_pal"]
     if args.option == "finetune":
         optim_args += ["task_scheduler", "projection"]
         if args.projection == "vaccine":
