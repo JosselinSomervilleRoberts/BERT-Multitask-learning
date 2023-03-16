@@ -40,6 +40,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 TQDM_DISABLE = False
+writer = None
 
 class Colors:
    PURPLE = '\033[95m'
@@ -492,11 +493,9 @@ def train_multitask(config):
     config_hyperparam = config
     assert torch.cuda.is_available()
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
-    # print('device', device)
-    # print('device', device)
+
     # Load data
     # Create the data and its corresponding datasets and dataloaders
-
     sst_train_data, num_labels,para_train_data, sts_train_data = load_multitask_data(args.sst_train,args.para_train,args.sts_train, split ='train')
     sst_dev_data, num_labels,para_dev_data, sts_dev_data = load_multitask_data(args.sst_dev,args.para_dev,args.sts_dev, split ='train')
     print("")
@@ -575,9 +574,9 @@ def train_multitask(config):
             for i in tqdm(range(args.num_batches_per_epoch), desc=task + ' epoch ' + str(epoch), disable=TQDM_DISABLE, smoothing=0):
                 loss = scheduler.process_named_batch(objects_group, args, name=task)
                 n_batches += 1
-                # if not args.no_tensorboard:
-                    # writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
-                    # writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * n_batches)
+                if not args.no_tensorboard:
+                    writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
+                    writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * n_batches)
             # Evaluate on dev set
             dev_acc = 0
             if task == 'sst': dev_acc, _, _, _ = model_eval_sentiment(sst_dev_dataloader, model, device)
@@ -590,8 +589,8 @@ def train_multitask(config):
                 saved_path = save_model(model, optimizer, args, config, args.filepath)
                 color_score, saved = Colors.PURPLE, True
 
-            # if not args.no_tensorboard:
-                # writer.add_scalar("Dev Acc " + task, dev_acc, args.batch_size * n_batches)
+            if not args.no_tensorboard:
+                writer.add_scalar("Dev Acc " + task, dev_acc, args.batch_size * n_batches)
 
             # Print dev accuracy
             terminal_width = get_term_width()
@@ -642,10 +641,10 @@ def train_multitask(config):
                     n_batches += 1
                     if not args.no_tensorboard:
                         if infos[task]['first']:
-                            # writer.add_scalar("Loss " + task, loss.item(), 0)
+                            writer.add_scalar("Loss " + task, loss.item(), 0)
                             infos[task]['first'] = False
-                        # writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
-                        # writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * total_num_batches[task])
+                        writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
+                        writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * total_num_batches[task])
 
                 # Evaluate on dev set
                 color_score, saved = Colors.BLUE, False
@@ -656,11 +655,11 @@ def train_multitask(config):
                     color_score, saved = Colors.PURPLE, True
                     infos[task]['last_improv'] = epoch
                 if not args.no_tensorboard:
-                    # writer.add_scalar("[EPOCH] Dev accuracy " + task, dev_acc, epoch)
+                    writer.add_scalar("[EPOCH] Dev accuracy " + task, dev_acc, epoch)
                     if infos[task]['first_loss']:
                         infos[task]['first_loss'] = False
-                        # writer.add_scalar("Dev accuracy " + task, dev_acc, 0)
-                    # writer.add_scalar("Dev accuracy " + task, dev_acc, args.batch_size * n_batches)
+                        writer.add_scalar("Dev accuracy " + task, dev_acc, 0)
+                    writer.add_scalar("Dev accuracy " + task, dev_acc, args.batch_size * n_batches)
 
                 # Print dev accuracy
                 spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
@@ -711,8 +710,8 @@ def train_multitask(config):
     if not args.no_tensorboard:
         for name in ['sst', 'sts', 'para']:
             loss = scheduler.process_named_batch(objects_group=objects_group, args=args, name=name, apply_optimization=False)
-            # writer.add_scalar("Loss " + name, loss.item(), 0)
-            # writer.add_scalar("Specific Loss " + name, loss.item(), 0)
+            writer.add_scalar("Loss " + name, loss.item(), 0)
+            writer.add_scalar("Specific Loss " + name, loss.item(), 0)
 
     for epoch in range(args.epochs):
         print(Colors.BOLD + f'{"     Epoch " + str(epoch) + "     ":-^{get_term_width()}}' + Colors.END)
@@ -737,17 +736,17 @@ def train_multitask(config):
                             losses[task] += loss
                             num_batches[task] += 1
                             n_batches += 1
-                            # if not args.no_tensorboard:
-                                # writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
-                                # writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * total_num_batches[name])
+                            if not args.no_tensorboard:
+                                writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
+                                writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * total_num_batches[name])
                         for j in range(nb_batches_per_update - 3):
                             task, loss = scheduler.process_one_batch(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args, apply_optimization=False)
                             losses[task] += loss#.item()
                             num_batches[task] += 1
                             n_batches += 1
-                            # if not args.no_tensorboard:
-                                # writer.add_scalar("Loss " + task, losses[task].item(), args.batch_size * n_batches)
-                                # writer.add_scalar("Specific Loss " + task, losses[task].item(), args.batch_size * total_num_batches[name])
+                            if not args.no_tensorboard:
+                                writer.add_scalar("Loss " + task, losses[task].item(), args.batch_size * n_batches)
+                                writer.add_scalar("Specific Loss " + task, losses[task].item(), args.batch_size * total_num_batches[name])
                         losses_opt = [losses[task] / num_batches[task] for task in ['sst', 'sts', 'para']]
                         optimizer.backward(losses_opt)
                         optimizer.step()
@@ -764,9 +763,9 @@ def train_multitask(config):
                             num_batches[task] += 1
                             losses[task] += losses_tasks[j]
                             n_batches += 1
-                            # if not args.no_tensorboard:
-                                # writer.add_scalar("Loss " + task, losses_tasks[j].item(), args.batch_size * n_batches)
-                                # writer.add_scalar("Specific Loss " + task, losses_tasks[j].item(), args.batch_size * total_num_batches[name])
+                            if not args.no_tensorboard:
+                                writer.add_scalar("Loss " + task, losses_tasks[j].item(), args.batch_size * n_batches)
+                                writer.add_scalar("Specific Loss " + task, losses_tasks[j].item(), args.batch_size * total_num_batches[name])
                         losses = [losses[task] / num_batches[task]**alpha for task in ['sst', 'sts', 'para']]
                         optimizer.backward(losses)
                         optimizer.step()
@@ -782,9 +781,9 @@ def train_multitask(config):
                         train_loss[name] += losses[-1].item()
                         num_batches[name] += 1
                         total_num_batches[name] += 1
-                        # if not args.no_tensorboard:
-                            # writer.add_scalar("Loss " + name, losses[-1].item(), args.batch_size * n_batches)
-                            # writer.add_scalar("Specific Loss " + name, losses[-1].item(), args.batch_size * total_num_batches[name])
+                        if not args.no_tensorboard:
+                            writer.add_scalar("Loss " + name, losses[-1].item(), args.batch_size * n_batches)
+                            writer.add_scalar("Specific Loss " + name, losses[-1].item(), args.batch_size * total_num_batches[name])
                     optimizer.backward(losses)
                     optimizer.step()
         else:
@@ -795,9 +794,9 @@ def train_multitask(config):
                 train_loss[task] += loss.item()
                 num_batches[task] += 1
                 total_num_batches[task] += 1
-                # if not args.no_tensorboard:
-                    # writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
-                    # # writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * total_num_batches[task])
+                if not args.no_tensorboard:
+                    writer.add_scalar("Loss " + task, loss.item(), args.batch_size * n_batches)
+                    # writer.add_scalar("Specific Loss " + task, loss.item(), args.batch_size * total_num_batches[task])
 
         # Compute average train loss
         for task in train_loss:
@@ -829,29 +828,29 @@ def train_multitask(config):
         arithmetic_mean_acc = (paraphrase_accuracy + sentiment_accuracy + sts_corr) / 3
 
         # Write to tensorboard
-        # if not args.no_tensorboard:
-            # writer.add_scalar("[EPOCH] Dev accuracy sst", sentiment_accuracy, epoch)
-            # writer.add_scalar("[EPOCH] Dev accuracy para", paraphrase_accuracy, epoch)
-            # writer.add_scalar("[EPOCH] Dev accuracy sts", sts_corr, epoch)
-            # writer.add_scalar("[EPOCH] Dev accuracy mean", arithmetic_mean_acc, epoch)
-            # writer.add_scalar("[EPOCH] Num batches sst", num_batches['sst'], epoch)
-            # writer.add_scalar("[EPOCH] Num batches para", num_batches['para'], epoch)
-            # writer.add_scalar("[EPOCH] Num batches sts", num_batches['sts'], epoch)
-            # if epoch == 0:
-                # writer.add_scalar("Dev accuracy sst", sentiment_accuracy, 0)
-                # writer.add_scalar("Dev accuracy para", paraphrase_accuracy, 0)
-                # writer.add_scalar("Dev accuracy sts", sts_corr, 0)
-                # writer.add_scalar("Dev accuracy mean", arithmetic_mean_acc, 0)
-                # writer.add_scalar("Num batches sst", num_batches['sst'], 0)
-                # writer.add_scalar("Num batches para", num_batches['para'], 0)
-                # writer.add_scalar("Num batches sts", num_batches['sts'], 0)
-            # writer.add_scalar("Dev accuracy sst", sentiment_accuracy, args.batch_size * n_batches)
-            # writer.add_scalar("Dev accuracy para", paraphrase_accuracy, args.batch_size * n_batches)
-            # writer.add_scalar("Dev accuracy sts", sts_corr, args.batch_size * n_batches)
-            # writer.add_scalar("Dev accuracy mean", arithmetic_mean_acc, args.batch_size * n_batches)
-            # writer.add_scalar("Num batches sst", num_batches['sst'], args.batch_size * n_batches)
-            # writer.add_scalar("Num batches para", num_batches['para'], args.batch_size * n_batches)
-            # writer.add_scalar("Num batches sts", num_batches['sts'], args.batch_size * n_batches)
+        if not args.no_tensorboard:
+            writer.add_scalar("[EPOCH] Dev accuracy sst", sentiment_accuracy, epoch)
+            writer.add_scalar("[EPOCH] Dev accuracy para", paraphrase_accuracy, epoch)
+            writer.add_scalar("[EPOCH] Dev accuracy sts", sts_corr, epoch)
+            writer.add_scalar("[EPOCH] Dev accuracy mean", arithmetic_mean_acc, epoch)
+            writer.add_scalar("[EPOCH] Num batches sst", num_batches['sst'], epoch)
+            writer.add_scalar("[EPOCH] Num batches para", num_batches['para'], epoch)
+            writer.add_scalar("[EPOCH] Num batches sts", num_batches['sts'], epoch)
+            if epoch == 0:
+                writer.add_scalar("Dev accuracy sst", sentiment_accuracy, 0)
+                writer.add_scalar("Dev accuracy para", paraphrase_accuracy, 0)
+                writer.add_scalar("Dev accuracy sts", sts_corr, 0)
+                writer.add_scalar("Dev accuracy mean", arithmetic_mean_acc, 0)
+                writer.add_scalar("Num batches sst", num_batches['sst'], 0)
+                writer.add_scalar("Num batches para", num_batches['para'], 0)
+                writer.add_scalar("Num batches sts", num_batches['sts'], 0)
+            writer.add_scalar("Dev accuracy sst", sentiment_accuracy, args.batch_size * n_batches)
+            writer.add_scalar("Dev accuracy para", paraphrase_accuracy, args.batch_size * n_batches)
+            writer.add_scalar("Dev accuracy sts", sts_corr, args.batch_size * n_batches)
+            writer.add_scalar("Dev accuracy mean", arithmetic_mean_acc, args.batch_size * n_batches)
+            writer.add_scalar("Num batches sst", num_batches['sst'], args.batch_size * n_batches)
+            writer.add_scalar("Num batches para", num_batches['para'], args.batch_size * n_batches)
+            writer.add_scalar("Num batches sts", num_batches['sts'], args.batch_size * n_batches)
 
         # Saves model if it is the best one so far on the dev set
         color_score, saved = Colors.BLUE, False
@@ -937,6 +936,19 @@ def print_subset_of_args(args, title, list_of_args, color = Colors.BLUE, print_l
 def warn(message: str, color: str = Colors.RED) -> None:
     print(color + "WARNING: " + message + Colors.END)
 
+
+def args_to_command_line(args: argparse.Namespace) -> str:
+    s = "python3 multitask_classifier.py"
+    for arg in vars(args):
+        value = getattr(args, arg)
+        if type(value) == bool:
+            if value:
+                s += f" --{arg}"
+        else:
+            s += f" --{arg} {value}"
+    return s
+
+
 def get_args():
     working_dir = os.getcwd()+'/'
     parser = argparse.ArgumentParser()
@@ -985,7 +997,7 @@ def get_args():
     parser.add_argument("--task_scheduler", type=str, choices=('random', 'round_robin', 'pal', 'para', 'sts', 'sst'), default="round_robin")
     
     #number of hyperparameter tuning experiments
-    parser.add_argument("--num_tuning_runs", type=int, default=2)
+    parser.add_argument("--num_tuning_runs", type=int, default=-1, help="Number of hyperparameter tuning experiments. If -1, no tuning is performed.")
 
     # Optimizations
     parser.add_argument("--combine_strategy", type=str, choices=('none', 'encourage', 'force'), default="none")
@@ -1000,9 +1012,6 @@ def get_args():
     parser.add_argument("--use_smart_regularization", action='store_true')
     parser.add_argument("--smart_weight_regularization", type=float, default=1e-2)
 
-    #working directory
-
-
     args = parser.parse_args()
 
     # Set the preprocessed training datasets
@@ -1012,18 +1021,9 @@ def get_args():
         args.sts_train = "data/preprocessed_data/preprocessed-sts-train.csv"
 
     # Logs the command to recreate the same run with all the arguments
-    s = "python3 multitask_classifier.py"
-    for arg in vars(args):
-        value = getattr(args, arg)
-        if type(value) == bool:
-            if value:
-                s += f" --{arg}"
-        else:
-            s += f" --{arg} {value}"
-    print("\n" + Colors.BOLD + "Command to recreate this run:" + Colors.END + s + "\n")
+    print("\n" + Colors.BOLD + "Command to recreate this run:" + Colors.END + args_to_command_line(args) + "\n")
 
     # Saves s in args.log_dir/command.txt
-
     if args.save_path == "runs/my_model":
         writer = SummaryWriter()
     else:
@@ -1043,7 +1043,7 @@ def get_args():
     args.batch_size_sts = args.batch_size // args.gradient_accumulations_sts
 
     # Display some infos here (e.g. batch size, learning rate, etc.)
-    print_length = 62
+    print_length = 70
     print_subset_of_args(args, "DATASETS", ["sst_train", "sst_dev", "sst_test", "para_train", "para_dev", "para_test", "sts_train", "sts_dev", "sts_test"], color = Colors.BLUE, print_length = print_length, var_length = 20)
     print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = print_length, var_length = 20)
     print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = print_length, var_length = 25)
@@ -1115,25 +1115,28 @@ if __name__ == "__main__":
     args.filepath = args.log_dir + "/best-model.pt"
     print("Saving model to: ", args.filepath)
     seed_everything(args.seed)  # fix the seed for reproducibility
-    ray.init(logging_level=logging.ERROR)
 
-    #######################################################
-    #Set hyperparameter tuning ranges in search space
-    #######################################################
-    search_space = {
-        "lr": tune.loguniform(1e-7,1e-4),  #learning rates between 10^-7 and 10^-4
-        "n_hidden_layers": tune.sample_from(lambda spec: np.random.randint(0,3)),
-        "hidden_dropout_prob": tune.sample_from(lambda spec: np.random.uniform(0,.4)),
-        "projection": tune.choice(['none', 'pcgrad', 'vaccine']),
-        "beta-vaccine": tune.sample_from(lambda spec: 10 ** (-10 * np.random.randint(1,3))),
-        "task_scheduler": tune.choice(['round_robin', 'pal']),
-        "args": args
-    }
+    if args.num_tuning_runs > 1 and args.option != "test":
+        print(Colors.BLUE + "Hyperparameter tuning is enabled" + Colors.END)
+        ray.init(logging_level=logging.ERROR)
 
-    #######################################################
-    #Set tuner arguments
-    #######################################################
-    if args.option != "test":
+        #######################################################
+        #Set hyperparameter tuning ranges in search space
+        #######################################################
+        search_space = {
+            "lr": tune.loguniform(1e-7,1e-4),  #learning rates between 10^-7 and 10^-4
+            "n_hidden_layers": tune.sample_from(lambda spec: np.random.randint(0,3)),
+            "hidden_dropout_prob": tune.sample_from(lambda spec: np.random.uniform(0,.4)),
+            "projection": tune.choice(['none', 'pcgrad', 'vaccine']),
+            "beta-vaccine": tune.sample_from(lambda spec: 10 ** (-10 * np.random.randint(0,2))),
+            "task_scheduler": tune.choice(['round_robin', 'pal']),
+            "args": args
+        }
+        print_subset_of_args(search_space, "SEARCH SPACE", search_space.keys(), color = Colors.GREEN, print_length = 70, var_length = 30)
+
+        #######################################################
+        #Set tuner arguments
+        #######################################################
         tuner = tune.run(
             train_multitask,
             config=search_space,
@@ -1145,6 +1148,11 @@ if __name__ == "__main__":
         )
         best_config = tuner.get_best_config(metric="accuracy", mode="max")
         print('best trial config', best_config)
+        print("\n" + Colors.BOLD + "Command to recreate this run:" + Colors.END + args_to_command_line(best_config) + "\n")
 
+    # Normal training
+    elif args.option != "test": train_multitask(args)
+
+    # Testing
     if args.option == "test": args.filepath = args.pretrained_model_name
     if args.option != "pretrain" and args.option != 'individual_pretrain': test_model(args)
