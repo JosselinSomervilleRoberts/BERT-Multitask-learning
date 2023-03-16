@@ -542,7 +542,7 @@ def train_multitask(args):
                     last_improv = epoch
                 
                 # Print dev accuracy
-                spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
+                spaces_per_task = int((terminal_width - 3*(20+7)) / 2)
                 end_print = f'{"Saved":>{25 + spaces_per_task}}' if saved else ""
                 print(Colors.BOLD + color_score + f'{"Cur acc dev: ":<20}'   + Colors.END + color_score + f"{dev_acc:.5f}" + " " * spaces_per_task
                     + Colors.BOLD + color_score + f'{" Best acc dev: ":<20}' + Colors.END + color_score + f"{infos[task]['best_dev_acc']:.5f}"
@@ -647,7 +647,7 @@ def train_multitask(args):
             last_improv = epoch
 
         terminal_width = os.get_terminal_size().columns
-        spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
+        spaces_per_task = int((terminal_width - 3*(20+7)) / 2)
         print(Colors.BOLD + f'{"Num batches SST: ":<20}'   + Colors.END + f"{num_batches['sst']:<5}" + " " * spaces_per_task
             + Colors.BOLD + f'{" Num batches Para: ":<20}' + Colors.END + f"{num_batches['para']:<5}" + " " * spaces_per_task
             + Colors.BOLD + f'{" Num batches STS: ":<20}'  + Colors.END + f"{num_batches['sts']:<5}")
@@ -775,7 +775,7 @@ def get_args():
     print_length = 62
     print_subset_of_args(args, "DATASETS", ["sst_train", "sst_dev", "sst_test", "para_train", "para_dev", "para_test", "sts_train", "sts_dev", "sts_test"], color = Colors.BLUE, print_length = print_length, var_length = 20)
     print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = print_length, var_length = 20)
-    print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = print_length, var_length = 25)
+    print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name", "no_train_classifier"], color = Colors.CYAN, print_length = print_length, var_length = 25)
 
     hyperparameters = ["n_hidden_layers", "batch_size", "epochs", "lr", "hidden_dropout_prob", "seed"]
     if args.option == "finetune": hyperparameters += ["num_batches_per_epoch"]
