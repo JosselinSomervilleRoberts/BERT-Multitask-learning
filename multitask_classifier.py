@@ -927,16 +927,7 @@ def test_model(args):
 
 
 def print_subset_of_args(args, title, list_of_args, color = Colors.BLUE, print_length = 50, var_length = 15):
-    """Prints a subset of the arguments in a nice format."""
-    if type(args) == dict:
-        print("\n" + color + f'{" " + title + " ":█^{print_length}}')
-        for arg in list_of_args:
-            if arg != "args":
-                print(Colors.BOLD + f'█ {arg + ": ": >{var_length}}' + Colors.END + f'{args[arg]: <{print_length - var_length - 3}}' +  color  + '█')
-        print("█" * print_length + Colors.END)
-        return
-    
-    # If args is not a dict, it is an argparse.Namespace
+    """Prints a subset of the arguments in a nice format."""# If args is not a dict, it is an argparse.Namespace
     print("\n" + color + f'{" " + title + " ":█^{print_length}}')
     for arg in list_of_args:
         print(Colors.BOLD + f'█ {arg + ": ": >{var_length}}' + Colors.END + f'{getattr(args, arg): <{print_length - var_length - 3}}' +  color  + '█')
@@ -1127,6 +1118,12 @@ if __name__ == "__main__":
     seed_everything(args.seed)  # fix the seed for reproducibility
 
     if args.num_tuning_runs > 1 and args.option != "test":
+        # Disable logging for tensorboard
+        if not args.no_tensorboard:
+            warn("Tensorboard is disabled when hyperparameter tuning is enabled")
+        writer = None
+        args.no_tensorboard = True
+
         print(Colors.BLUE + "Hyperparameter tuning is enabled" + Colors.END)
         ray.init(logging_level=logging.ERROR)
 
@@ -1142,7 +1139,6 @@ if __name__ == "__main__":
             "task_scheduler": tune.choice(['round_robin', 'pal']),
             "args": args
         }
-        print_subset_of_args(search_space, "SEARCH SPACE", search_space.keys(), color = Colors.GREEN, print_length = 70, var_length = 30)
 
         #######################################################
         #Set tuner arguments
