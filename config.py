@@ -201,7 +201,7 @@ class BertConfig(PretrainedConfig):
     gradient_checkpointing=False,
     position_embedding_type="absolute",
     use_cache=True,
-    low_rank_size=132,
+    low_rank_size=12*32,
     num_tasks = 3,
     **kwargs
   ):
