@@ -206,7 +206,7 @@ class BertLayerWithPAL(BertLayer):
     #print("output", output.shape)
     return output
 
-  def from_BertLayer(bert_layer, config, project_ups = None, project_downs = None):
+  def from_BertLayer(bert_layer, config, project_ups = None, project_downs = None, train_pal = True):
     """
     this function is used to convert a BertLayer to BertLayerWithPAL
     bert_layer: BertLayer
@@ -220,7 +220,7 @@ class BertLayerWithPAL(BertLayer):
     bert_layer.task_attention = nn.ModuleList([TaskSpecificAttention(config, project_up=project_ups[task], project_down=project_downs[task], perform_initial_init=True) for task in range(config.num_tasks)])
     
     for param in bert_layer.task_attention.parameters():
-      param.requires_grad = True
+      param.requires_grad = train_pal
 
     return bert_layer
 
@@ -319,7 +319,7 @@ class BertModelWithPAL(BertModel):
   def __init__(self, config):
     super().__init__(config, bert_layer=BertLayerWithPAL)
 
-  def from_BertModel(bert_model, bert_config):
+  def from_BertModel(bert_model, bert_config, train_pal=True):
     bert_model.__class__ = BertModelWithPAL
     bert_model.project_ups = nn.ModuleList([nn.Linear(bert_config.low_rank_size, bert_config.hidden_size) for task in range(bert_config.num_tasks)])
     bert_model.project_downs = nn.ModuleList([nn.Linear(bert_config.hidden_size, bert_config.low_rank_size) for task in range(bert_config.num_tasks)])
@@ -328,7 +328,11 @@ class BertModelWithPAL(BertModel):
       nn.init.zeros_(project_up.weight)
     for project_down in bert_model.project_downs:
       nn.init.zeros_(project_down.weight)
-    bert_model.bert_layers = nn.ModuleList([BertLayerWithPAL.from_BertLayer(bert_layer, bert_config, project_ups=bert_model.project_ups, project_downs=bert_model.project_downs) for bert_layer in bert_model.bert_layers])
+    bert_model.bert_layers = nn.ModuleList([BertLayerWithPAL.from_BertLayer(bert_layer, bert_config, project_ups=bert_model.project_ups, project_downs=bert_model.project_downs, train_pal=train_pal) for bert_layer in bert_model.bert_layers])
+    for param in bert_model.project_downs.parameters():
+      param.requires_grad = train_pal
+    for param in bert_model.project_ups.parameters():
+      param.requires_grad = train_pal
 
 
   def encode(self, hidden_states, attention_mask, task_id):

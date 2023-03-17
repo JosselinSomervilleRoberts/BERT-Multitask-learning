@@ -546,11 +546,11 @@ def train_multitask(args, writer):
             print(Colors.YELLOW + "Trying to load model without PAL Layers" + Colors.END)
             if args.pretrained_model_name != "none":
                 config = load_model(model, args.pretrained_model_name)
-            BertModelWithPAL.from_BertModel(model.bert, bert_config)
+            BertModelWithPAL.from_BertModel(model.bert, bert_config, train_pal = not args.no_train_pal)
             print(Colors.GREEN + "Loaded pretrained model without PAL layers" + Colors.END)
         except Exception as e:
             print(Colors.YELLOW + "Failed to load model without PAL Layers" + Colors.END)
-            BertModelWithPAL.from_BertModel(model.bert, bert_config)
+            BertModelWithPAL.from_BertModel(model.bert, bert_config, train_pal = not args.no_train_pal)
             if args.pretrained_model_name != "none":
                 config = load_model(model, args.pretrained_model_name)
             print(Colors.GREEN + "Loaded pretrained model with PAL layers" + Colors.END)
@@ -1011,6 +1011,7 @@ def get_args():
     # Optimizations
     parser.add_argument("--use_pal", action='store_true', help="Use additionnal PAL in BERT layers")
     parser.add_argument("--no_train_classifier", action='store_true')
+    parser.add_argument("--no_train_pal", action='store_true')
     parser.add_argument("--combine_strategy", type=str, choices=('none', 'encourage', 'force'), default="none")
     parser.add_argument("--use_amp", action='store_true')
     parser.add_argument("--max_batch_size_sst", type=int, default=32)
