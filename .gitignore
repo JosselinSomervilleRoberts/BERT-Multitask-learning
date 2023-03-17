@@ -1,5 +1,5 @@
 # Project specific
-*.pt
+*multitask.pt
 config.ini
 *.zip
 runs/*
