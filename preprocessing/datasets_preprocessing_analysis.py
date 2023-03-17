@@ -39,7 +39,7 @@ def print_class_repartition(df, task):
         repartition = df[label].value_counts()
         print(repartition)
 
-def generate_preprocessed_csv(df, task, df_path, max_length = 210, saving_path = 'data/preprocessed_data/'):
+def generate_preprocessed_csv(df, task, df_path, max_length = 210, saving_path = 'data/preprocessed_data/lengths/'):
     """
     This function generates a csv file with the preprocessed dataset with respect to lengths.
     It takes as input a dataframe df, a task, a dataframe path df_path, a maximimum length max_length
@@ -87,17 +87,17 @@ if __name__ == '__main__' :
     print("Sentiment dataset :\n")
     print_length_statistics(df_sentiment, "sentiment")
     print_class_repartition(df_sentiment, "sentiment")
-    generate_preprocessed_csv(df_sentiment, "sentiment", sentiment_filename, max_length = 300)
+    generate_preprocessed_csv(df_sentiment, "sentiment", sentiment_filename, max_length = 250)
     print("\n")
 
     print("Paraphrase dataset :\n")
     print_length_statistics(df_paraphrase, "paraphrase")
     print_class_repartition(df_paraphrase, "paraphrase")
-    generate_preprocessed_csv(df_paraphrase, "paraphrase", paraphrase_filename, max_length = 300)
+    generate_preprocessed_csv(df_paraphrase, "paraphrase", paraphrase_filename, max_length = 250)
     print("\n")
 
     print("Similarity dataset :\n")
     print_length_statistics(df_similarity, "similarity")
-    generate_preprocessed_csv(df_similarity, "similarity", similarity_filename, max_length = 300)
+    generate_preprocessed_csv(df_similarity, "similarity", similarity_filename, max_length = 250)
     print("\n")
 

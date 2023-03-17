@@ -1031,18 +1031,23 @@ def get_args():
     parser.add_argument("--projection", type=str, choices=('none', 'pcgrad', 'vaccine'), default="none")
     parser.add_argument("--beta_vaccine", type=float, default=1e-2)
     parser.add_argument("--patience", type=int, help="Number maximum of epochs without improvement", default=5)
-    parser.add_argument("--use_preprocessing_lengths", action='store_true')
+    parser.add_argument("--use_preprocessing", type=str, choices=('none', 'lengths', 'lengths_augmented'), default="none")
     parser.add_argument("--use_smart_regularization", action='store_true')
     parser.add_argument("--smart_weight_regularization", type=float, default=1e-2)
 
     args = parser.parse_args()
 
     # Set the preprocessed training datasets
-    if args.use_preprocessing_lengths:
-        args.sst_train = "data/preprocessed_data/preprocessed-ids-sst-train.csv"
-        args.para_train = "data/preprocessed_data/preprocessed-quora-train.csv"
-        args.sts_train = "data/preprocessed_data/preprocessed-sts-train.csv"
+    if args.use_preprocessing == "lengths":
+        args.sst_train = "data/preprocessed_data/lengths/preprocessed-ids-sst-train.csv"
+        args.para_train = "data/preprocessed_data/lengths/preprocessed-quora-train.csv"
+        args.sts_train = "data/preprocessed_data/lengths/preprocessed-sts-train.csv"
         
+    elif args.use_preprocessing == "lengths_augmented":
+        args.sst_train = "data/preprocessed_data/EDA_data/preprocessed-EDA-ids-sst-train.csv"
+        args.para_train = "data/preprocessed_data/lengths/preprocessed-quora-train.csv"
+        args.sts_train = "data/preprocessed_data/lengths/preprocessed-sts-train.csv"
+
     # Logs the command to recreate the same run with all the arguments
     s = "python3 multitask_classifier.py"
     for arg in vars(args):
