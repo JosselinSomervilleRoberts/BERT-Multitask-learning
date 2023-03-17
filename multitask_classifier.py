@@ -546,10 +546,11 @@ def train_multitask(args, writer):
         # - load a pretrained model with PAL layers (firt convert to BertModelWithPAL, then load the model)
         # - load a pretrained model without PAL layers (first load the model, then convert to BertModelWithPAL)
         try:
-            print(Colors.GREEN + "Trying to load model without PAL Layers" + Colors.END)
+            print(Colors.YELLOW + "Trying to load model without PAL Layers" + Colors.END)
             if args.pretrained_model_name != "none":
                 config = load_model(model, args.pretrained_model_name)
-            model.bert = BertModelWithPAL.from_BertModel(model.bert, bert_config)
+            BertModelWithPAL.from_BertModel(model.bert, bert_config)
+            print(Colors.GREEN + "Loaded pretrained model without PAL layers" + Colors.END)
         except Exception as e:
             print(Colors.YELLOW + "Failed to load model without PAL Layers" + Colors.END)
             BertModelWithPAL.from_BertModel(model.bert, bert_config)
