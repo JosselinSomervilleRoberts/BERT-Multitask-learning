@@ -68,6 +68,11 @@ def get_term_width():
     except OSError:
         return 80
 
+def count_learnable_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters())
 
 class MultitaskBERT(nn.Module):
     '''
@@ -572,6 +577,14 @@ def train_multitask(args, writer):
     best_dev_accuracies = {'sst': 0, 'para': 0, 'sts': 0}
     best_dev_rel_improv = 0
 
+
+    # Infos (number of parameters, number of trainable parameters)
+    print("\n" + "-" * get_term_width())
+    print(Colors.BOLD + Colors.BLUE + "Number of parameters: " + Colors.END + Colors.BLUE + str(count_parameters(model)) + Colors.END)
+    print(Colors.BOLD + Colors.BLUE + "Number of trainable parameters: " + Colors.END + Colors.BLUE + str(count_learnable_parameters(model)) + Colors.END)
+    print("-" * get_term_width() + "\n")
+
+
     # Package objects
     objects_group = ObjectsGroup(model, optimizer, scaler)
     args.device = device
@@ -624,8 +637,6 @@ def train_multitask(args, writer):
         print("-" * terminal_width)
         print('\n\n')
         return
-
-            
 
 
     # Loss logs
