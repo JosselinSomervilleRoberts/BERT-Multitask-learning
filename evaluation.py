@@ -95,7 +95,7 @@ def model_eval_paraphrase(paraphrase_dataloader, model, device):
 
 
 
-def model_eval_sts(sts_dataloader, model, device):
+def model_eval_sts(sts_dataloader, model, device, use_sigmoid=False):
     model.eval()  # switch to eval model, will turn off randomness like dropout
 
     with torch.no_grad():
@@ -117,8 +117,12 @@ def model_eval_sts(sts_dataloader, model, device):
             b_mask2 = b_mask2.to(device)
 
             logits = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-            y_hat = logits.flatten().cpu().numpy()
-            b_labels = b_labels.flatten().cpu().numpy()
+            if use_sigmoid:
+                y_hat = logits.sigmoid().flatten().cpu().numpy()
+                b_labels = b_labels.sigmoid().flatten().cpu().numpy()
+            else:
+                y_hat = logits.flatten().cpu().numpy()
+                b_labels = b_labels.flatten().cpu().numpy()
 
             sts_y_pred.extend(y_hat)
             sts_y_true.extend(b_labels)
@@ -161,9 +165,9 @@ def model_eval_sentiment(sentiment_dataloader, model, device):
 def model_eval_multitask(sentiment_dataloader,
                          paraphrase_dataloader,
                          sts_dataloader,
-                         model, device, writer = None, epoch = None, tensorboard = False):
+                         model, device, writer = None, epoch = None, tensorboard = False, use_sigmoid=False):
     paraphrase_accuracy, para_y_true, para_y_pred, para_sent_ids = model_eval_paraphrase(paraphrase_dataloader, model, device)
-    sts_corr, sts_y_true, sts_y_pred, sts_sent_ids = model_eval_sts(sts_dataloader, model, device)
+    sts_corr, sts_y_true, sts_y_pred, sts_sent_ids = model_eval_sts(sts_dataloader, model, device, use_sigmoid=use_sigmoid)
     sentiment_accuracy, sst_y_true, sst_y_pred, sst_sent_ids = model_eval_sentiment(sentiment_dataloader, model, device)
 
     if tensorboard and writer is not None:
@@ -293,7 +297,7 @@ def test_model_multitask(args, model, device):
             dev_sentiment_accuracy,dev_sst_y_pred, dev_sst_sent_ids, dev_sts_corr, \
             dev_sts_y_pred, dev_sts_sent_ids = model_eval_multitask(sst_dev_dataloader,
                                                                     para_dev_dataloader,
-                                                                    sts_dev_dataloader, model, device)
+                                                                    sts_dev_dataloader, model, device, use_sigmoid=False)
 
         test_para_y_pred, test_para_sent_ids, test_sst_y_pred, \
             test_sst_sent_ids, test_sts_y_pred, test_sts_sent_ids = \
@@ -302,7 +306,7 @@ def test_model_multitask(args, model, device):
                                           sts_test_dataloader, model, device)
 
         with open(args.log_dir + args.sst_dev_out, "w+") as f:
-            print(f"dev sentiment acc :: {dev_sentiment_accuracy :.3f}")
+            print(f"dev sentiment acc :: {dev_sentiment_accuracy :.5f}")
             f.write(f"id \t Predicted_Sentiment \n")
             for p, s in zip(dev_sst_sent_ids, dev_sst_y_pred):
                 f.write(f"{p} , {s} \n")
@@ -313,7 +317,7 @@ def test_model_multitask(args, model, device):
                 f.write(f"{p} , {s} \n")
 
         with open(args.log_dir + args.para_dev_out, "w+") as f:
-            print(f"dev paraphrase acc :: {dev_paraphrase_accuracy :.3f}")
+            print(f"dev paraphrase acc :: {dev_paraphrase_accuracy :.5f}")
             f.write(f"id \t Predicted_Is_Paraphrase \n")
             for p, s in zip(dev_para_sent_ids, dev_para_y_pred):
                 f.write(f"{p} , {s} \n")
@@ -324,7 +328,7 @@ def test_model_multitask(args, model, device):
                 f.write(f"{p} , {s} \n")
 
         with open(args.log_dir + args.sts_dev_out, "w+") as f:
-            print(f"dev sts corr :: {dev_sts_corr :.3f}")
+            print(f"dev sts corr :: {dev_sts_corr :.5f}")
             f.write(f"id \t Predicted_Similiary \n")
             for p, s in zip(dev_sts_sent_ids, dev_sts_y_pred):
                 f.write(f"{p} , {s} \n")
@@ -333,3 +337,6 @@ def test_model_multitask(args, model, device):
             f.write(f"id \t Predicted_Similiary \n")
             for p, s in zip(test_sts_sent_ids, test_sts_y_pred):
                 f.write(f"{p} , {s} \n")
+
+        # Mean accuracy
+        print(f"Mean accuracy :: {np.mean([dev_sentiment_accuracy, dev_paraphrase_accuracy, dev_sts_corr]) :.5f}")

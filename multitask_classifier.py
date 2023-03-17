@@ -5,8 +5,9 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from config import BertConfig
 
-from bert import BertModel
+from bert import BertModel, BertModelWithPAL
 from preprocessing.tokenizer import BertTokenizer
 from optimizer import AdamW
 from torch.cuda.amp import GradScaler, autocast
@@ -115,8 +116,15 @@ class MultitaskBERT(nn.Module):
         self.dropout_similarity = nn.ModuleList([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
         self.linear_similarity = nn.ModuleList([nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(config.n_hidden_layers)] + [nn.Linear(BERT_HIDDEN_SIZE, 1)])
 
+        if args.no_train_classifier:
+            for param in self.linear_sentiment.parameters():
+                param.requires_grad = False
+            for param in self.linear_paraphrase.parameters():
+                param.requires_grad = False
+            for param in self.linear_similarity.parameters():
+                param.requires_grad = False
 
-    def forward(self, input_ids, attention_mask):
+    def forward(self, input_ids, attention_mask, task_id):
         'Takes a batch of sentences and produces embeddings for them.'
         # The final BERT embedding is the hidden state of [CLS] token (the first token)
         # Here, you can start by just returning the embeddings straight from BERT.
@@ -124,7 +132,11 @@ class MultitaskBERT(nn.Module):
         # (e.g., by adding other layers).
         
         # Step 1: Get the BERT embeddings
-        bert_output = self.bert(input_ids, attention_mask)
+        # TODO: Fix for non-PAL
+        if isinstance(self.bert, BertModelWithPAL):
+            bert_output = self.bert(input_ids, attention_mask, task_id)
+        else:
+            bert_output = self.bert(input_ids, attention_mask)
 
         # Step 2: Get the [CLS] token embeddings
         cls_embeddings = bert_output['pooler_output']
@@ -151,11 +163,11 @@ class MultitaskBERT(nn.Module):
         Thus, your output should contain 5 logits for each sentence.
         '''
         # Step 1: Get the BERT embeddings
-        x = self.forward(input_ids, attention_mask)
+        x = self.forward(input_ids, attention_mask, task_id=0)
         return self.last_layers_sentiment(x)
 
     def get_similarity_paraphrase_embeddings(self, input_ids_1, attention_mask_1,
-                           input_ids_2, attention_mask_2):
+                           input_ids_2, attention_mask_2, task_id):
         '''Given a batch of pairs of sentences, get the BERT embeddings.'''
         # Step 0: Get [SEP] token ids
         sep_token_id = torch.tensor([self.tokenizer.sep_token_id], dtype=torch.long, device=input_ids_1.device)
@@ -166,7 +178,7 @@ class MultitaskBERT(nn.Module):
         attention_mask = torch.cat((attention_mask_1, torch.ones_like(batch_sep_token_id), attention_mask_2, torch.ones_like(batch_sep_token_id)), dim=1)
 
         # Step 2: Get the BERT embeddings
-        x = self.forward(input_id, attention_mask)
+        x = self.forward(input_id, attention_mask, task_id=task_id)
 
         return x
     
@@ -187,12 +199,11 @@ class MultitaskBERT(nn.Module):
     def predict_paraphrase(self,
                            input_ids_1, attention_mask_1,
                            input_ids_2, attention_mask_2):
-        '''Given a batch of pairs of sentences, outputs a single logit for predicting whether they are paraphrases.
-        Note that your output should be unnormalized (a logit); it will be passed to the sigmoid function
-        during evaluation, and handled as a logit by the appropriate loss function.
+        '''Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
+        Note that your output should be unnormalized (a logit).
         '''
         # Step 1: Get the BERT embeddings
-        x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
+        x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2, task_id=1)
         return self.last_layers_paraphrase(x)
 
 
@@ -222,7 +233,7 @@ class MultitaskBERT(nn.Module):
         during evaluation, and handled as a logit by the appropriate loss function.
         '''
         # Step 1 : Get the BERT embeddings
-        x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
+        x = self.get_similarity_paraphrase_embeddings(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2, task_id=2)
         return self.last_layers_similarity(x)
 
 
@@ -375,7 +386,7 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
         b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
 
-        embeddings = model.forward(b_ids, b_mask)
+        embeddings = model.forward(b_ids, b_mask, task_id=0)
         logits = model.last_layers_sentiment(embeddings)
         
         loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
@@ -400,7 +411,7 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'], batch['attention_mask_1'], batch['token_ids_2'], batch['attention_mask_2'], batch['labels'])
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
 
-        embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2, task_id=1)
         preds = model.last_layers_paraphrase(embeddings)
         loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum') / args.batch_size
         loss_value = loss.item()
@@ -424,9 +435,12 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (batch['token_ids_1'], batch['attention_mask_1'], batch['token_ids_2'], batch['attention_mask_2'], batch['labels'])
         b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = b_ids_1.to(device), b_mask_1.to(device), b_ids_2.to(device), b_mask_2.to(device), b_labels.to(device)
 
-        embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        embeddings = model.get_similarity_paraphrase_embeddings(b_ids_1, b_mask_1, b_ids_2, b_mask_2, task_id=2)
         preds = model.last_layers_similarity(embeddings)
-        loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size
+        if args.use_sigmoid_in_eval:
+            loss = F.binary_cross_entropy_with_logits(preds.sigmoid().view(-1), b_labels.float().sigmoid(), reduction='sum') / args.batch_size
+        else:
+            loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
 
         if args.use_smart_regularization:
@@ -453,7 +467,7 @@ def step_optimizer(objects_group: ObjectsGroup, args: dict, step: int, total_nb_
     torch.cuda.empty_cache()
     if TQDM_DISABLE:
         str_total_nb_batches = "?" if total_nb_batches is None else str(total_nb_batches)
-        print(f'batch {step}/{str_total_nb_batches} STS - loss: {loss_value:.3f}')
+        print(f'batch {step}/{str_total_nb_batches} STS - loss: {loss_value:.5f}')
     return loss_value
 
 def finish_training_batch(objects_group: ObjectsGroup, args: dict, step: int, gradient_accumulations: int, total_nb_batches = None):
@@ -525,8 +539,26 @@ def train_multitask(args, writer):
     config = SimpleNamespace(**config)
 
     model = MultitaskBERT(config)
-    if args.pretrained_model_name != "none":
+    bert_config = BertConfig()
+
+    if args.use_pal:
+        # Here we try to either:
+        # - load a pretrained model with PAL layers (firt convert to BertModelWithPAL, then load the model)
+        # - load a pretrained model without PAL layers (first load the model, then convert to BertModelWithPAL)
+        try:
+            BertModelWithPAL.from_BertModel(model.bert, bert_config)
+            if args.pretrained_model_name != "none":
+                config = load_model(model, args.pretrained_model_name)
+            print(Colors.GREEN + "Loaded pretrained model with PAL layers" + Colors.END)
+        except Exception as e:
+            print(Colors.YELLOW + "Warning: could not load pretrained model with PAL layers, trying to load without PAL layers" + Colors.END)
+            if args.pretrained_model_name != "none":
+                config = load_model(model, args.pretrained_model_name)
+            model.bert = BertModelWithPAL.from_BertModel(model.bert, bert_config)
+    elif args.pretrained_model_name != "none":
         config = load_model(model, args.pretrained_model_name)
+
+    # Put model on GPU
     model = model.to(device)
 
     lr = args.lr
@@ -653,26 +685,26 @@ def train_multitask(args, writer):
                     writer.add_scalar("Dev accuracy " + task, dev_acc, args.batch_size * n_batches)
                 
                 # Print dev accuracy
-                spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
+                spaces_per_task = int((terminal_width - 3*(20+7)) / 2)
                 end_print = f'{"Saved":>{25 + spaces_per_task}}' if saved else ""
-                print(Colors.BOLD + color_score + f'{"Cur acc dev: ":<20}'   + Colors.END + color_score + f"{dev_acc:.3f}" + " " * spaces_per_task
-                    + Colors.BOLD + color_score + f'{" Best acc dev: ":<20}' + Colors.END + color_score + f"{infos[task]['best_dev_acc']:.3f}"
+                print(Colors.BOLD + color_score + f'{"Cur acc dev: ":<20}'   + Colors.END + color_score + f"{dev_acc:.5f}" + " " * spaces_per_task
+                    + Colors.BOLD + color_score + f'{" Best acc dev: ":<20}' + Colors.END + color_score + f"{infos[task]['best_dev_acc']:.5f}"
                     + end_print + Colors.END)
             print("-" * terminal_width)
             print('\n\n')
 
         # Load best model for each task
         for task in infos.keys():
-            infos[task]['layer'].load_state_dict(infos[task]['best_model'])
+            if infos[task]['best_model'] is not None: infos[task]['layer'].load_state_dict(infos[task]['best_model'])
         
         # Evaluate on dev set
         print(Colors.BOLD + Colors.CYAN + f'{"     Evaluation Multitask     ":-^{get_term_width()}}' + Colors.END + Colors.CYAN)
         (paraphrase_accuracy, _, _,
          sentiment_accuracy, _, _,
-         sts_corr, _, _) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, writer=writer, epoch=0, tensorboard=not args.no_tensorboard)
-        print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'    + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}'  + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'   + Colors.END + Colors.CYAN + f"{sts_corr:.3f}")
+         sts_corr, _, _) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, writer=writer, epoch=0, tensorboard=not args.no_tensorboard, use_sigmoid=args.use_sigmoid_in_eval)
+        print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'    + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}'  + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'   + Colors.END + Colors.CYAN + f"{sts_corr:.5f}")
 
         # Save model
         saved_path = save_model(model, optimizer, args, config, args.filepath)
@@ -800,7 +832,7 @@ def train_multitask(args, writer):
         # Eval on dev
         (paraphrase_accuracy, _, _,
         sentiment_accuracy,_, _,
-        sts_corr, _, _) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, writer=writer, epoch=epoch, tensorboard=not args.no_tensorboard)
+        sts_corr, _, _) = model_eval_multitask(sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device, writer=writer, epoch=epoch, tensorboard=not args.no_tensorboard, use_sigmoid=args.use_sigmoid_in_eval)
 
         # Useful for deg
         # paraphrase_accuracy, sentiment_accuracy, sts_corr = 0.6, 0.4, 0.33333333
@@ -857,25 +889,25 @@ def train_multitask(args, writer):
             last_improv = epoch
 
         terminal_width = get_term_width()
-        spaces_per_task = int((terminal_width - 3*(20+5)) / 2)
+        spaces_per_task = int((terminal_width - 3*(20+7)) / 2)
         print(Colors.BOLD + f'{"Num batches SST: ":<20}'   + Colors.END + f"{num_batches['sst']:<5}" + " " * spaces_per_task
             + Colors.BOLD + f'{" Num batches Para: ":<20}' + Colors.END + f"{num_batches['para']:<5}" + " " * spaces_per_task
             + Colors.BOLD + f'{" Num batches STS: ":<20}'  + Colors.END + f"{num_batches['sts']:<5}")
-        print(Colors.BOLD + f'{"Train loss SST: ":<20}'   + Colors.END  + f"{train_loss['sst']:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + f'{" Train loss Para: ":<20}' + Colors.END  + f"{train_loss['para']:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + f'{" Train loss STS: ":<20}'  + Colors.END  + f"{train_loss['sts']:.3f}")
-        print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'    + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}'  + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'   + Colors.END + Colors.CYAN + f"{sts_corr:.3f}")
-        print(Colors.BOLD + color_score + f'{"Best acc SST: ":<20}'   + Colors.END + color_score + f"{best_dev_accuracies['sst']:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + color_score + f'{" Best acc Para: ":<20}' + Colors.END + color_score + f"{best_dev_accuracies['para']:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + color_score + f'{" Best acc STS: ":<20}'  + Colors.END + color_score + f"{best_dev_accuracies['sts']:.3f}")
+        print(Colors.BOLD + f'{"Train loss SST: ":<20}'   + Colors.END  + f"{train_loss['sst']:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + f'{" Train loss Para: ":<20}' + Colors.END  + f"{train_loss['para']:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + f'{" Train loss STS: ":<20}'  + Colors.END  + f"{train_loss['sts']:.5f}")
+        print(Colors.BOLD + Colors.CYAN + f'{"Dev acc SST: ":<20}'    + Colors.END + Colors.CYAN + f"{sentiment_accuracy:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + Colors.CYAN + f'{" Dev acc Para: ":<20}'  + Colors.END + Colors.CYAN + f"{paraphrase_accuracy:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + Colors.CYAN + f'{" Dev acc STS: ":<20}'   + Colors.END + Colors.CYAN + f"{sts_corr:.5f}")
+        print(Colors.BOLD + color_score + f'{"Best acc SST: ":<20}'   + Colors.END + color_score + f"{best_dev_accuracies['sst']:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + color_score + f'{" Best acc Para: ":<20}' + Colors.END + color_score + f"{best_dev_accuracies['para']:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + color_score + f'{" Best acc STS: ":<20}'  + Colors.END + color_score + f"{best_dev_accuracies['sts']:.5f}")
         end_print = f'{"Saved to: " + saved_path:>{25 + spaces_per_task}}' if saved else ""
-        print(Colors.BOLD + color_score + f'{"Mean acc dev: ":<20}'   + Colors.END + color_score + f"{arithmetic_mean_acc:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + color_score + f'{" Best mean acc: ":<20}' + Colors.END + color_score + f"{best_dev_acc:.3f}"
+        print(Colors.BOLD + color_score + f'{"Mean acc dev: ":<20}'   + Colors.END + color_score + f"{arithmetic_mean_acc:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + color_score + f'{" Best mean acc: ":<20}' + Colors.END + color_score + f"{best_dev_acc:.5f}"
             + end_print + Colors.END)
-        print(Colors.BOLD + f'{"Rel improv dev: ":<20}'   + Colors.END + f"{geom_mean_rel_improvement:.3f}" + " " * spaces_per_task
-            + Colors.BOLD + f'{" Best rel improv: ":<20}' + Colors.END + f"{best_dev_rel_improv:.3f}")
+        print(Colors.BOLD + f'{"Rel improv dev: ":<20}'   + Colors.END + f"{geom_mean_rel_improvement:.5f}" + " " * spaces_per_task
+            + Colors.BOLD + f'{" Best rel improv: ":<20}' + Colors.END + f"{best_dev_rel_improv:.5f}")
         print("-" * terminal_width)
         print("")
 
@@ -911,6 +943,9 @@ def test_model(args):
         config = saved['model_config']
 
         model = MultitaskBERT(config)
+        bert_config = BertConfig()
+        if args.use_pal:
+            BertModelWithPAL.from_BertModel(model.bert, bert_config)
         model.load_state_dict(saved['model'])
         model = model.to(device)
         print(f"Loaded model to test from {args.filepath}")
@@ -975,6 +1010,9 @@ def get_args():
     parser.add_argument("--task_scheduler", type=str, choices=('random', 'round_robin', 'pal', 'para', 'sts', 'sst'), default="round_robin")
 
     # Optimizations
+    parser.add_argument("--use_sigmoid_in_eval", action='store_true')
+    parser.add_argument("--use_pal", action='store_true', help="Use additionnal PAL in BERT layers")
+    parser.add_argument("--no_train_classifier", action='store_true')
     parser.add_argument("--combine_strategy", type=str, choices=('none', 'encourage', 'force'), default="none")
     parser.add_argument("--use_amp", action='store_true')
     parser.add_argument("--max_batch_size_sst", type=int, default=32)
@@ -1030,13 +1068,13 @@ def get_args():
     print_length = 62
     print_subset_of_args(args, "DATASETS", ["sst_train", "sst_dev", "sst_test", "para_train", "para_dev", "para_test", "sts_train", "sts_dev", "sts_test"], color = Colors.BLUE, print_length = print_length, var_length = 20)
     print_subset_of_args(args, "OUTPUTS", ["sst_dev_out", "sst_test_out", "para_dev_out", "para_test_out", "sts_dev_out", "sts_test_out"], color = Colors.RED, print_length = print_length, var_length = 20)
-    print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name"], color = Colors.CYAN, print_length = print_length, var_length = 25)
+    print_subset_of_args(args, "PRETRAIING", ["option", "pretrained_model_name", "no_train_classifier", "use_sigmoid_in_eval"], color = Colors.CYAN, print_length = print_length, var_length = 25)
 
     hyperparameters = ["n_hidden_layers", "batch_size", "epochs", "lr", "hidden_dropout_prob", "seed", "transformer"]
     if args.option == "finetune": hyperparameters += ["num_batches_per_epoch"]
     print_subset_of_args(args, "HYPERPARAMETERS", hyperparameters, color = Colors.GREEN, print_length = print_length, var_length = 30)
     
-    optim_args = ["use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts", "patience"]
+    optim_args = ["use_amp", "use_gpu", "gradient_accumulations_sst", "gradient_accumulations_para", "gradient_accumulations_sts", "patience", "use_pal"]
     if args.option == "finetune":
         optim_args += ["task_scheduler", "projection"]
         if args.projection == "vaccine":
