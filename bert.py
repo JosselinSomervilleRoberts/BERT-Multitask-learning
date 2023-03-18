@@ -96,6 +96,7 @@ class TaskSpecificAttention(nn.Module):
     self.project_up = nn.Linear(config.low_rank_size, config.hidden_size) if project_up is None else project_up
     config_self_attention = copy.deepcopy(config)
     config_self_attention.hidden_size = config.low_rank_size
+    config_self_attention.num_attention_heads = 6
     self.attention = BertSelfAttention(config_self_attention, init_to_identity=perform_initial_init)
 
     # Intialize the weight of project_down, project_up such that the self-attention is the zero function
