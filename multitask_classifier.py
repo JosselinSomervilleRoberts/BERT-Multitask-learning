@@ -23,8 +23,12 @@ from ray.util import inspect_serializability
 from ray.tune.logger import Logger, DEFAULT_LOGGERS
 from ray.tune.logger import NoopLogger
 from ray.tune import CLIReporter
+from ray.tune import Callback
+
+
 import logging
 from ray.tune import ProgressReporter
+from ray.air.config import RunConfig, ScalingConfig
 
 from smart_regularization import smart_regularization
 from transformers import RobertaTokenizer, RobertaModel
@@ -37,7 +41,7 @@ from evaluation import model_eval_multitask, test_model_multitask, \
 
 
 from torch.utils.tensorboard import SummaryWriter
-
+import json
 
 TQDM_DISABLE = False
 
@@ -756,7 +760,8 @@ def train_multitask(config):
                     # The probability of choosing a task is changed so that at least each task is chosen once.
                     # But still follows the PAL scheduler.
                     nb_batches_per_update = 16
-                    alpha = 0.2 + 0.8 * (epoch) / (args.epochs-1)
+                    alpha = 0.2
+                    if args.epochs > 1: alpha = 0.2 + 0.8 * (epoch) / (args.epochs-1)  #got a ZeroDivisionError: added default alpha val to avoid this
                     for i in tqdm(range(int(num_batches_per_epoch / nb_batches_per_update)), desc=f'Train {epoch}', disable=TQDM_DISABLE, smoothing=0):
                         losses = {'sst': 0, 'para': 0, 'sts': 0}
                         tasks, losses_tasks = scheduler.process_several_batches_with_control(epoch=epoch+1, num_epochs=args.epochs, objects_group=objects_group, args=args, num_batches=nb_batches_per_update)
@@ -903,6 +908,7 @@ def train_multitask(config):
                 f.write('{}: {}\n'.format(key, value))
 
     tune.report(accuracy = arithmetic_mean_acc)
+    # session.report({"accuracy": arithmetic_mean_acc})
 
 
 def load_model(model, filepath):
@@ -986,6 +992,7 @@ def get_args():
     
     #number of hyperparameter tuning experiments
     parser.add_argument("--num_tuning_runs", type=int, default=2)
+    parser.add_argument("--tune_hyperparameters", action='store_true')
 
     # Optimizations
     parser.add_argument("--combine_strategy", type=str, choices=('none', 'encourage', 'force'), default="none")
@@ -1115,13 +1122,21 @@ if __name__ == "__main__":
     args.filepath = args.log_dir + "/best-model.pt"
     print("Saving model to: ", args.filepath)
     seed_everything(args.seed)  # fix the seed for reproducibility
-    ray.init(logging_level=logging.ERROR)
+    ray.init(
+        logging_level=logging.ERROR,
+        _system_config={
+        "object_spilling_config": json.dumps(
+            {"type": "filesystem", "params": {"directory_path": "./spill"}},
+        )
+    },
+    
+    )
 
     #######################################################
     #Set hyperparameter tuning ranges in search space
     #######################################################
-    search_space = {
-        "lr": tune.loguniform(1e-7,1e-4),  #learning rates between 10^-7 and 10^-4
+    config_tune = {
+        "lr": tune.loguniform(1e-4,1e-2),  #learning rates between 10^-7 and 10^-4
         "n_hidden_layers": tune.sample_from(lambda spec: np.random.randint(0,3)),
         "hidden_dropout_prob": tune.sample_from(lambda spec: np.random.uniform(0,.4)),
         "projection": tune.choice(['none', 'pcgrad', 'vaccine']),
@@ -1129,22 +1144,77 @@ if __name__ == "__main__":
         "task_scheduler": tune.choice(['round_robin', 'pal']),
         "args": args
     }
+    config_train = {
+        "lr": args.lr,  #learning rates between 10^-7 and 10^-4
+        "n_hidden_layers": args.n_hidden_layers,
+        "hidden_dropout_prob": args.hidden_dropout_prob,
+        "projection": args.projection,
+        "beta-vaccine": args.beta_vaccine,
+        "task_scheduler": args.task_scheduler,
+        "args": args
+    }
 
+    class ExperimentTerminationReporter(CLIReporter):
+        def should_report(self, trials, done=False):
+            """Reports only on experiment termination."""
+            return done
     #######################################################
     #Set tuner arguments
     #######################################################
+    # param_space = {
+    #     "scaling_config": ScalingConfig(
+    #         use_gpu = args.use_gpu,
+    #     ),
+    #     # You can even grid search various datasets in Tune.
+    #     # "datasets": {
+    #     #     "train": tune.grid_search(
+    #     #         [ds1, ds2]
+    #     #     ),
+    #     # },
+    #     "params": {
+    #         "lr": tune.loguniform(1e-7,1e-4),  #learning rates between 10^-7 and 10^-4
+    #         "n_hidden_layers": tune.sample_from(lambda spec: np.random.randint(0,3)),
+    #         "hidden_dropout_prob": tune.sample_from(lambda spec: np.random.uniform(0,.4)),
+    #         "projection": tune.choice(['none', 'pcgrad', 'vaccine']),
+    #         "beta-vaccine": tune.sample_from(lambda spec: 10 ** (-10 * np.random.randint(1,3))),
+    #         "task_scheduler": tune.choice(['round_robin', 'pal']),
+    #         "args": args
+    #     },
+    # }
+
     if args.option != "test":
-        tuner = tune.run(
-            train_multitask,
-            config=search_space,
-            max_failures=100,
-            resources_per_trial={'gpu': 1},
-            num_samples=args.num_tuning_runs,  #set the number of hyperparameter combinations to try out
-            metric='accuracy',
-            mode='max',
-        )
-        best_config = tuner.get_best_config(metric="accuracy", mode="max")
-        print('best trial config', best_config)
+        
+        #set appropriate config file depending on whether we're training or tuning
+        if args.tune_hyperparameters:
+            config = config_tune 
+            num_tuning_runs = args.num_tuning_runs
+            verbose=2
+        else:
+            config = config_train
+            num_tuning_runs = 1
+            verbose=1
+
+        #set tuner parameters
+        tuner = tune.Tuner(     
+                tune.with_resources(
+                    tune.with_parameters(train_multitask),
+                    resources={"gpu": 1}
+                ),
+                tune_config=tune.TuneConfig(
+                    metric="accuracy",
+                    mode="max",
+                    num_samples=num_tuning_runs,
+                ),
+                run_config=RunConfig(
+                    # verbose=verbose,
+                    name="my_tune_run"
+                ),
+                param_space=config,
+                # progress_reporter = ExperimentTerminationReporter(),  
+            )
+        #run training or tuning
+        results = tuner.fit()
+        print(results.get_best_result(metric="accuracy", mode="max").config)
 
     if args.option == "test": args.filepath = args.pretrained_model_name
     if args.option != "pretrain" and args.option != 'individual_pretrain': test_model(args)
