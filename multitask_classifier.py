@@ -1045,7 +1045,7 @@ def get_args():
         
     elif args.use_preprocessing == "lengths_augmented":
         args.sst_train = "data/preprocessed_data/EDA_data/preprocessed-EDA-ids-sst-train.csv"
-        args.para_train = "data/preprocessed_data/lengths/preprocessed-quora-train.csv"
+        args.para_train = "data/preprocessed_data/EDA_data/preprocessed-EDA-quora-train.csv"
         args.sts_train = "data/preprocessed_data/lengths/preprocessed-sts-train.csv"
 
     # Logs the command to recreate the same run with all the arguments
