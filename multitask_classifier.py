@@ -648,11 +648,12 @@ def train_multitask(args, writer):
 
         linear = nn.Linear(5,5)
         # Initialize linear layer
-        W = np.array([[+1.0, +0.5, +0.1, -1.0, -2.0],
-                      [+0.5, +1.0, +0.2, -0.5, -1.0],
-                      [-0.5, +0.5, +1.0, +0.5, -0.5],
-                      [-1.0, -0.5, +0.2, +1.0, +0.5],
-                      [-2.0, -1.0, +0.1, +0.5, +1.0]])
+        # W = np.array([[+1.0, +0.5, +0.1, -1.0, -2.0],
+        #               [+0.5, +1.0, +0.2, -0.5, -1.0],
+        #               [-0.5, +0.5, +1.0, +0.5, -0.5],
+        #               [-1.0, -0.5, +0.2, +1.0, +0.5],
+        #               [-2.0, -1.0, +0.1, +0.5, +1.0]])
+        W = np.eye(5)
         B = np.array([0, 0, 0, 0, 0])
         # Init to W
         linear.weight.data = torch.from_numpy(W).float()
@@ -661,23 +662,15 @@ def train_multitask(args, writer):
         optimizer = AdamW(linear.parameters(), lr=lr)
 
         # Compute accuracy on dev set
-        correct, incorrect = 0, 0
-        for batch in tqdm(sst_dev_dataloader, desc="Eval Init", disable=TQDM_DISABLE, smoothing=0):
-            b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
-            b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
-
-            embeddings = model.forward(b_ids, b_mask, task_id=0)
-            logits = model.last_layers_sentiment(embeddings)
-
-            correct += (torch.argmax(logits, dim=1) == b_labels).sum().item()
-            incorrect += (torch.argmax(logits, dim=1) != b_labels).sum().item()
-
-        print(Colors.BOLD + Colors.BLUE + "Accuracy on dev set: " + Colors.END + Colors.BLUE + str(correct / (correct + incorrect)) + Colors.END)
-
+        model.last_linear_sentiment = linear
+        dev_ac, _, _, _ = model_eval_sentiment(sst_dev_dataloader, model, device)
+        print(Colors.BOLD + Colors.BLUE + "Accuracy on dev set: " + Colors.END + Colors.BLUE + str(dev_ac) + Colors.END)
+        
         # Print number of parameters for the optimizer
         print(Colors.BOLD + Colors.BLUE + "Number of parameters for the optimizer: " + Colors.END + Colors.BLUE + str(count_parameters(linear)) + Colors.END)
 
         for epoch in range(args.epochs):
+            model.last_linear_sentiment = None
             model.eval()
             for batch in tqdm(sst_train_dataloader, desc="Kernel Optimization", disable=TQDM_DISABLE, smoothing=0):
                 b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
@@ -696,28 +689,16 @@ def train_multitask(args, writer):
                 optimizer.zero_grad()
 
             # Evaluate on dev set
-            correct, incorrect = 0, 0
-            for batch in tqdm(sst_dev_dataloader, desc="Eval", disable=TQDM_DISABLE, smoothing=0):
-                b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
-                b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
-
-                embeddings = model.forward(b_ids, b_mask, task_id=0)
-                logits = model.last_layers_sentiment(embeddings)
-                logits = linear(logits)
-
-                correct += (torch.argmax(logits, dim=1) == b_labels).sum().item()
-                incorrect += (torch.argmax(logits, dim=1) != b_labels).sum().item()
-
-            print(Colors.BOLD + Colors.BLUE + "Accuracy on dev set: " + Colors.END + Colors.BLUE + str(correct / (correct + incorrect)) + Colors.END)
+            # Actual evaluation
+            model.last_linear_sentiment = linear
+            dev_ac, _, _, _ = model_eval_sentiment(sst_dev_dataloader, model, device)
+            print(Colors.BOLD + Colors.BLUE + "Accuracy on dev set: " + Colors.END + Colors.BLUE + str(dev_ac) + Colors.END)
         
         # Print weights of linear layer
         print(Colors.BOLD + Colors.BLUE + "Weights of linear layer: " + Colors.END + Colors.BLUE + str(linear.weight.data) + Colors.END)
         print(Colors.BOLD + Colors.BLUE + "Bias of linear layer: " + Colors.END + Colors.BLUE + str(linear.bias.data) + Colors.END)
         
-        # Actual evaluation
-        model.last_linear_sentiment = linear
-        dev_ac, _, _, _ = model_eval_sentiment(sst_dev_dataloader, model, device)
-        print(Colors.BOLD + Colors.BLUE + "Accuracy on dev set: " + Colors.END + Colors.BLUE + str(dev_ac) + Colors.END)
+        
         return 
 
     # Loss logs
