@@ -496,6 +496,47 @@ def save_model(model, optimizer, args, config, filepath):
     return filepath
 
 
+class KernelLogisticRegression:
+    def __init__(self, kernel, reg_param=0.1, max_iter=100):
+        self.kernel = kernel
+        self.reg_param = reg_param
+        self.max_iter = max_iter
+
+    def fit(self, X, y):
+        n = X.shape[0]
+        alpha = np.zeros(n)
+
+        K = np.zeros((n, n))
+        for i in range(n):
+            for j in range(n):
+                K[i, j] = self.kernel(X[i], X[j])
+
+        for iteration in tqdm(range(self.max_iter)):
+            y_hat = np.dot(K, alpha)
+            p = 1 / (1 + np.exp(-y_hat))
+            W = np.diag(p * (1 - p))
+            z = y_hat + (y - p) / np.diag(W)
+            alpha = np.linalg.solve(K + self.reg_param * np.identity(n), z)
+
+        self.alpha = alpha
+
+    def predict_proba(self, X):
+        n = X.shape[0]
+        K = np.zeros((n, self.alpha.shape[0]))
+        for i in range(n):
+            for j in range(K.shape[1]):
+                K[i, j] = self.kernel(X[i], X[j])
+
+        y_hat = np.dot(K, self.alpha)
+        proba = 1 / (1 + np.exp(-y_hat))
+        return proba
+
+    def predict(self, X):
+        proba = self.predict_proba(X)
+        y_pred = np.argmax(proba, axis=1)
+        return y_pred
+
+
 def train_multitask(args, writer):
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
     # Load data
@@ -638,6 +679,77 @@ def train_multitask(args, writer):
         print('\n\n')
         return
 
+    if args.option == "optimize":
+        # Run Kernel Optimization for SST
+        X = []
+        Y = []
+        print(Colors.BOLD + Colors.BLUE + "Running Kernel Optimization for SST" + Colors.END)
+
+
+        # Compute accuracy on dev set
+        correct = 0
+        incorrect = 0
+        for batch in tqdm(sst_dev_dataloader, desc="Kernel Optimization", disable=TQDM_DISABLE, smoothing=0):
+            b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
+            b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
+
+            embeddings = model.forward(b_ids, b_mask, task_id=0)
+            logits = model.last_layers_sentiment(embeddings)
+
+            # Apply argmax to get the predicted label
+            logits = torch.argmax(logits, dim=1)
+
+            # Count how many are correct and how many are incorrect
+            for i in range(len(logits)):
+                if logits[i] == b_labels[i]:
+                    correct += 1
+                else:
+                    incorrect += 1
+        print(Colors.BOLD + Colors.BLUE + f"Accuracy on dev set: {correct / (correct + incorrect):.3f}" + Colors.END)
+
+        i_batch = 0
+        for batch in tqdm(sst_train_dataloader, desc="Kernel Optimization", disable=TQDM_DISABLE, smoothing=0):
+            b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
+            b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
+
+            embeddings = model.forward(b_ids, b_mask, task_id=0)
+            logits = model.last_layers_sentiment(embeddings)
+
+            # Add to X
+            X+= logits.detach().cpu().numpy().tolist()
+            i_batch += 1
+            Y+= b_labels.detach().cpu().numpy().tolist()
+
+        # Run Kernel Optimization
+        def gaussian_kernel(x, y, bandwidth=0.1):
+            return np.exp(-np.sum((x - y) ** 2) / (2 * bandwidth ** 2))
+
+        X = np.array(X)
+        Y = np.array(Y)
+        klr = KernelLogisticRegression(kernel=gaussian_kernel, reg_param=0.1, max_iter=100)
+        klr.fit(X, Y)
+
+        # Compute accuracy on dev set
+        correct = 0
+        incorrect = 0
+        for batch in tqdm(sst_dev_dataloader, desc="Kernel Optimization", disable=TQDM_DISABLE, smoothing=0):
+            b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
+            b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
+
+            embeddings = model.forward(b_ids, b_mask, task_id=0)
+            logits = model.last_layers_sentiment(embeddings)
+
+            # Apply Kernel
+            logits = klr.predict(logits.detach().cpu().numpy())
+
+            # Count how many are correct and how many are incorrect
+            for i in range(len(logits)):
+                if logits[i] == b_labels[i]:
+                    correct += 1
+                else:
+                    incorrect += 1
+        print(Colors.BOLD + Colors.BLUE + f"Accuracy on dev set: {correct / (correct + incorrect):.3f}" + Colors.END)
+        return 
 
     # Loss logs
     train_loss_logs_epochs = {'sst': [], 'para': [], 'sts': []}
@@ -993,7 +1105,7 @@ def get_args():
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--option", type=str,
                         help='pretrain: the BERT parameters are frozen; finetune: BERT parameters are updated',
-                        choices=('pretrain', 'finetune', 'test', 'individual_pretrain'), default="pretrain")
+                        choices=('pretrain', 'finetune', 'test', 'individual_pretrain', 'optimize'), default="pretrain")
     parser.add_argument("--pretrained_model_name", type=str, default="none")
     parser.add_argument("--use_gpu", action='store_true')
 
