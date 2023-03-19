@@ -716,7 +716,7 @@ def train_multitask(args, writer):
         
         # Actual evaluation
         model.last_linear_sentiment = linear
-        dev_ac, _, _ = model_eval_sentiment(sst_dev_dataloader, model, device)
+        dev_ac, _, _, _ = model_eval_sentiment(sst_dev_dataloader, model, device)
         print(Colors.BOLD + Colors.BLUE + "Accuracy on dev set: " + Colors.END + Colors.BLUE + str(dev_ac) + Colors.END)
         return 
 
