@@ -507,11 +507,11 @@ class KernelLogisticRegression:
         alpha = np.zeros(n)
 
         K = np.zeros((n, n))
-        for i in range(n):
+        for i in tqdm(range(n), desc="Computing kernel matrix"):
             for j in range(n):
                 K[i, j] = self.kernel(X[i], X[j])
 
-        for iteration in tqdm(range(self.max_iter)):
+        for iteration in tqdm(range(self.max_iter), desc="Fitting model"):
             y_hat = np.dot(K, alpha)
             p = 1 / (1 + np.exp(-y_hat))
             W = np.diag(p * (1 - p))
