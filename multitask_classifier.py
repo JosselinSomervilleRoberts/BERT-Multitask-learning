@@ -703,6 +703,10 @@ def train_multitask(args, writer):
                 incorrect += (torch.argmax(logits, dim=1) != b_labels).sum().item()
 
             print(Colors.BOLD + Colors.BLUE + "Accuracy on dev set: " + Colors.END + Colors.BLUE + str(correct / (correct + incorrect)) + Colors.END)
+        
+        # Print weights of linear layer
+        print(Colors.BOLD + Colors.BLUE + "Weights of linear layer: " + Colors.END + Colors.BLUE + str(linear.weight.data) + Colors.END)
+        print(Colors.BOLD + Colors.BLUE + "Bias of linear layer: " + Colors.END + Colors.BLUE + str(linear.bias.data) + Colors.END)
         return 
 
     # Loss logs
