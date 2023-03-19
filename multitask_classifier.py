@@ -99,6 +99,46 @@ def get_fc_layers(bert_hidden_size, rnn_hidden_size, fc_hidden_size, num_hidden_
 
     return nn.ModuleList(fc_layers)
 
+
+class Classifier(nn.Module):
+
+    def __init__(self, config, dim_output):
+        super(Classifier, self).__init__()
+        self.config = config
+        self.lstm = torch.nn.LSTM(input_size=BERT_HIDDEN_SIZE, hidden_size=config.rnn_hidden_size, num_layers=config.lstm_num_layers, batch_first=True)
+        self.dropout = nn.ModuleList([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
+        self.fc_layers = get_fc_layers(bert_hidden_size=BERT_HIDDEN_SIZE,
+                                        rnn_hidden_size=config.rnn_hidden_size, 
+                                        fc_hidden_size=config.fc_hidden_size,
+                                        num_hidden_layers=config.n_hidden_layers,
+                                        dim_output=dim_output,
+                                        trainable=not args.no_train_classifier)
+        init_rnn_weights(self.lstm)
+
+    def forward(self, bert_output):
+        cls_embedding = bert_output[:, 0, :] # [batch_size, bert_hidden_size]
+        embeddings = bert_output[:, 1:, :] # [batch_size, seq_len, bert_hidden_size]
+        lstm_output, _ = self.lstm(embeddings) # [batch_size, seq_len, rnn_hidden_size]
+        lstm_output = lstm_output[:, -1, :] # [batch_size, rnn_hidden_size]
+        x = torch.cat([cls_embedding, lstm_output], dim=1) # [batch_size, bert_hidden_size + rnn_hidden_size]
+        for i, fc_layer in enumerate(self.fc_layers):
+            x = fc_layer(x)
+            if i < len(self.fc_layers) - 1:
+                x = F.relu(x)
+
+        # Step 2: Hidden layers
+        for i in range(len(self.fc_layers) - 1):
+            x = self.dropout[i](x)
+            x = self.fc_layers[i](x)
+            x = F.relu(x)
+
+        # Step 3: Final layer
+        x = self.dropout[-1](x)
+        logits = self.fc_layers[-1](x)
+
+        return logits
+
+
 class MultitaskBERT(nn.Module):
     '''
     This module should use BERT for 3 tasks:
@@ -133,7 +173,7 @@ class MultitaskBERT(nn.Module):
             else:
                 param.requires_grad = False
 
-        rnn_hidden_size = 768
+        rnn_hidden_size = 256
         fc_hidden_size = 512
         self.rnn_sentiment = torch.nn.LSTM(input_size=BERT_HIDDEN_SIZE, hidden_size=rnn_hidden_size, num_layers=2, batch_first=True)
         self.rnn_paraphrase = torch.nn.LSTM(input_size=BERT_HIDDEN_SIZE, hidden_size=rnn_hidden_size, num_layers=2, batch_first=True)
