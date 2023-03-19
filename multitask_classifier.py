@@ -682,6 +682,8 @@ def train_multitask(args, writer):
                 embeddings = model.forward(b_ids, b_mask, task_id=0)
                 logits = model.last_layers_sentiment(embeddings)
                 logits = linear(logits)
+                # Apply softmax
+                logits = F.softmax(logits, dim=1)
 
                 loss = F.cross_entropy(logits, b_labels)
                 loss.backward()
