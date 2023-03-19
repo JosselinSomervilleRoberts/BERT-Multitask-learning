@@ -644,10 +644,9 @@ def train_multitask(args, writer):
 
         linear = nn.Linear(5,5)
         # Initialize linear layer
-        # Init weight to identity matrix
-        linear.weight.data = torch.eye(5)
-        # Init bias to 0
-        linear.bias.data = torch.zeros(5)
+        # Xavier initialization
+        nn.init.xavier_uniform_(linear.weight)
+        nn.init.zeros_(linear.bias)
         linear.to(device)
         optimizer = AdamW(linear.parameters(), lr=lr)
 
