@@ -508,7 +508,7 @@ class KernelLogisticRegression:
 
         K = np.dot(X, X.T)
 
-        for iteration in range(self.max_iter):
+        for iteration in tqdm(range(self.max_iter)):
             y_hat = np.dot(K, alpha)
             p = 1 / (1 + np.exp(-y_hat))
             W = np.diag(p * (1 - p))
