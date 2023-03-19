@@ -133,7 +133,7 @@ class MultitaskBERT(nn.Module):
             else:
                 param.requires_grad = False
 
-        rnn_hidden_size = 256
+        rnn_hidden_size = 768
         fc_hidden_size = 512
         self.rnn_sentiment = torch.nn.LSTM(input_size=BERT_HIDDEN_SIZE, hidden_size=rnn_hidden_size, num_layers=2, batch_first=True)
         self.rnn_paraphrase = torch.nn.LSTM(input_size=BERT_HIDDEN_SIZE, hidden_size=rnn_hidden_size, num_layers=2, batch_first=True)
