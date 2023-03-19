@@ -496,39 +496,6 @@ def save_model(model, optimizer, args, config, filepath):
     return filepath
 
 
-class KernelLogisticRegression:
-    def __init__(self, kernel, reg_param=0.1, max_iter=100):
-        self.kernel = kernel
-        self.reg_param = reg_param
-        self.max_iter = max_iter
-
-    def fit(self, X, y):
-        n = X.shape[0]
-        alpha = np.zeros(n)
-
-        K = np.dot(X, X.T)
-
-        for iteration in tqdm(range(self.max_iter)):
-            y_hat = np.dot(K, alpha)
-            p = 1 / (1 + np.exp(-y_hat))
-            W = np.diag(p * (1 - p))
-            z = y_hat + (y - p) / np.diag(W)
-            alpha = np.linalg.solve(K + self.reg_param * np.identity(n), z)
-
-        self.alpha = alpha
-
-    def predict_proba(self, X):
-        K = np.dot(X, X.T)
-        y_hat = np.dot(K, self.alpha)
-        proba = 1 / (1 + np.exp(-y_hat))
-        return proba
-
-    def predict(self, X):
-        proba = self.predict_proba(X)
-        y_pred = np.argmax(proba, axis=1)
-        return y_pred
-
-
 def train_multitask(args, writer):
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
     # Load data
@@ -673,74 +640,40 @@ def train_multitask(args, writer):
 
     if args.option == "optimize":
         # Run Kernel Optimization for SST
-        X = []
-        Y = []
         print(Colors.BOLD + Colors.BLUE + "Running Kernel Optimization for SST" + Colors.END)
 
+        linear = nn.Linear(5,5)
+        # Initialize linear layer
+        # Init weight to identity matrix
+        linear.weight.data = torch.eye(5)
+        # Init bias to 0
+        linear.bias.data = torch.zeros(5)
+        linear.to(device)
+        optimizer = AdamW(linear.parameters(), lr=lr)
 
-        # Compute accuracy on dev set
-        correct = 0
-        incorrect = 0
-        for batch in tqdm(sst_dev_dataloader, desc="Kernel Optimization", disable=TQDM_DISABLE, smoothing=0):
-            b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
-            b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
+        # Print number of parameters for the optimizer
+        print(Colors.BOLD + Colors.BLUE + "Number of parameters for the optimizer: " + Colors.END + Colors.BLUE + str(count_parameters(linear)) + Colors.END)
 
-            embeddings = model.forward(b_ids, b_mask, task_id=0)
-            logits = model.last_layers_sentiment(embeddings)
+        for epoch in range(args.epochs):
+            model.eval()
+            for batch in tqdm(sst_train_dataloader, desc="Kernel Optimization", disable=TQDM_DISABLE, smoothing=0):
+                b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
+                b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
 
-            # Apply argmax to get the predicted label
-            logits = torch.argmax(logits, dim=1)
+                embeddings = model.forward(b_ids, b_mask, task_id=0)
+                logits = model.last_layers_sentiment(embeddings)
+                logits = linear(logits)
 
-            # Count how many are correct and how many are incorrect
-            for i in range(len(logits)):
-                if logits[i] == b_labels[i]:
-                    correct += 1
-                else:
-                    incorrect += 1
-        print(Colors.BOLD + Colors.BLUE + f"Accuracy on dev set: {correct / (correct + incorrect):.3f}" + Colors.END)
+                loss = F.cross_entropy(logits, b_labels)
+                loss.backward()
 
-        i_batch = 0
-        for batch in tqdm(sst_train_dataloader, desc="Kernel Optimization", disable=TQDM_DISABLE, smoothing=0):
-            b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
-            b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
+                optimizer.step()
+                optimizer.zero_grad()
 
-            embeddings = model.forward(b_ids, b_mask, task_id=0)
-            logits = model.last_layers_sentiment(embeddings)
+            # Evaluate on dev set
+            dev_acc, _, _, _ = model_eval_sentiment(sst_dev_dataloader, model, device)
+            print(Colors.BOLD + Colors.BLUE + f'{"Cur acc dev: ":<20}' + Colors.END + Colors.BLUE + f"{dev_acc:.3f}" + Colors.END)
 
-            # Add to X
-            X+= logits.detach().cpu().numpy().tolist()
-            i_batch += 1
-            Y+= b_labels.detach().cpu().numpy().tolist()
-
-        # Run Kernel Optimization
-        def gaussian_kernel(x, y, bandwidth=0.1):
-            return np.exp(-np.sum((x - y) ** 2) / (2 * bandwidth ** 2))
-
-        X = np.array(X)
-        Y = np.array(Y)
-        klr = KernelLogisticRegression(kernel=gaussian_kernel, reg_param=0.1, max_iter=100)
-        klr.fit(X, Y)
-
-        # Compute accuracy on dev set
-        correct = 0
-        incorrect = 0
-        for batch in tqdm(sst_dev_dataloader, desc="Kernel Optimization", disable=TQDM_DISABLE, smoothing=0):
-            b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
-            b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
-
-            embeddings = model.forward(b_ids, b_mask, task_id=0)
-            logits = model.last_layers_sentiment(embeddings)
-
-            # Apply Kernel
-            logits = klr.predict(logits.detach().cpu().numpy())
-
-            # Count how many are correct and how many are incorrect
-            for i in range(len(logits)):
-                if logits[i] == b_labels[i]:
-                    correct += 1
-                else:
-                    incorrect += 1
-        print(Colors.BOLD + Colors.BLUE + f"Accuracy on dev set: {correct / (correct + incorrect):.3f}" + Colors.END)
         return 
 
     # Loss logs
