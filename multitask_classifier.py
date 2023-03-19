@@ -111,6 +111,7 @@ class MultitaskBERT(nn.Module):
         # Step 2: Add a linear layer for sentiment classification
         self.dropout_sentiment = nn.ModuleList([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
         self.linear_sentiment = nn.ModuleList([nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE) for _ in range(config.n_hidden_layers)] + [nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)])
+        self.last_linear_sentiment = None
 
         # Step 3: Add a linear layer for paraphrase detection
         self.dropout_paraphrase = nn.ModuleList([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
@@ -169,7 +170,10 @@ class MultitaskBERT(nn.Module):
         '''
         # Step 1: Get the BERT embeddings
         x = self.forward(input_ids, attention_mask, task_id=0)
-        return self.last_layers_sentiment(x)
+        x = self.last_layers_sentiment(x)
+        if self.last_linear_sentiment is not None:
+            x = self.last_linear_sentiment(x)
+        return x
 
     def get_similarity_paraphrase_embeddings(self, input_ids_1, attention_mask_1,
                            input_ids_2, attention_mask_2, task_id):
@@ -709,6 +713,11 @@ def train_multitask(args, writer):
         # Print weights of linear layer
         print(Colors.BOLD + Colors.BLUE + "Weights of linear layer: " + Colors.END + Colors.BLUE + str(linear.weight.data) + Colors.END)
         print(Colors.BOLD + Colors.BLUE + "Bias of linear layer: " + Colors.END + Colors.BLUE + str(linear.bias.data) + Colors.END)
+        
+        # Actual evaluation
+        model.last_linear_sentiment = linear
+        dev_ac, _, _ = model_eval_sentiment(model, sst_dev_dataloader, device)
+        print(Colors.BOLD + Colors.BLUE + "Accuracy on dev set: " + Colors.END + Colors.BLUE + str(dev_ac) + Colors.END)
         return 
 
     # Loss logs
