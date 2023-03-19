@@ -651,6 +651,27 @@ def train_multitask(args, writer):
         linear.to(device)
         optimizer = AdamW(linear.parameters(), lr=lr)
 
+        # Compute accuracy on dev set
+        correct, incorrect = 0, 0
+        for batch in tqdm(sst_dev_dataloader, desc="Eval Init", disable=TQDM_DISABLE, smoothing=0):
+            b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
+            b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
+
+            embeddings = model.forward(b_ids, b_mask, task_id=0)
+            logits = model.last_layers_sentiment(embeddings)
+            logits = linear(logits)
+
+            loss = F.cross_entropy(logits, b_labels)
+            loss.backward()
+
+            correct += (torch.argmax(logits, dim=1) == b_labels).sum().item()
+            incorrect += (torch.argmax(logits, dim=1) != b_labels).sum().item()
+
+            optimizer.step()
+            optimizer.zero_grad()
+
+        print(Colors.BOLD + Colors.BLUE + "Accuracy on dev set: " + Colors.END + Colors.BLUE + str(correct / (correct + incorrect)) + Colors.END)
+
         # Print number of parameters for the optimizer
         print(Colors.BOLD + Colors.BLUE + "Number of parameters for the optimizer: " + Colors.END + Colors.BLUE + str(count_parameters(linear)) + Colors.END)
 
@@ -671,9 +692,19 @@ def train_multitask(args, writer):
                 optimizer.zero_grad()
 
             # Evaluate on dev set
-            dev_acc, _, _, _ = model_eval_sentiment(sst_dev_dataloader, model, device)
-            print(Colors.BOLD + Colors.BLUE + f'{"Cur acc dev: ":<20}' + Colors.END + Colors.BLUE + f"{dev_acc:.3f}" + Colors.END)
+            correct, incorrect = 0, 0
+            for batch in tqdm(sst_dev_dataloader, desc="Eval", disable=TQDM_DISABLE, smoothing=0):
+                b_ids, b_mask, b_labels = (batch['token_ids'], batch['attention_mask'], batch['labels'])
+                b_ids, b_mask, b_labels = b_ids.to(device), b_mask.to(device), b_labels.to(device)
 
+                embeddings = model.forward(b_ids, b_mask, task_id=0)
+                logits = model.last_layers_sentiment(embeddings)
+                logits = linear(logits)
+
+                correct += (torch.argmax(logits, dim=1) == b_labels).sum().item()
+                incorrect += (torch.argmax(logits, dim=1) != b_labels).sum().item()
+
+            print(Colors.BOLD + Colors.BLUE + "Accuracy on dev set: " + Colors.END + Colors.BLUE + str(correct / (correct + incorrect)) + Colors.END)
         return 
 
     # Loss logs
