@@ -680,7 +680,8 @@ def train_multitask(args, writer):
                 logits = model.last_layers_sentiment(embeddings)
                 logits = linear(logits)
 
-                loss = F.cross_entropy(logits, b_labels)
+                # COmputes an MSE loss between logits and labels (logits are shape (batch_size, 5), labels are shape (batch_size, 1) with values in {0, 1, 2, 3, 4})
+                loss = F.mse_loss(torch.argmax(logits, dim=1).float(), b_labels.float())
                 loss.backward()
 
                 optimizer.step()
