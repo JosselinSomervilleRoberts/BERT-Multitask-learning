@@ -644,11 +644,11 @@ def train_multitask(args, writer):
 
         linear = nn.Linear(5,5)
         # Initialize linear layer
-        W = np.array([[1, 0.5, 0.1, 0, 0],
-                        [0.4, 1, 0.2, 0, 0],
-                        [0, 0.5, 1, 0.5, 0],
-                        [0, 0, 0.2, 1, 0.4],
-                        [0, 0, 0.1, 0.5, 1]])
+        W = np.array([[0.6, 0.5, 0.05, 0, 0],
+                        [0.1, 0.85, 0.05, 0, 0],
+                        [0, 0.6, 0.2, 0.6, 0],
+                        [0, 0, 0.05, 0.85, 0.1],
+                        [0, 0, 0.05, 0.5, 0.6]])
         B = np.array([0, 0, 0, 0, 0])
         # Init to W
         linear.weight.data = torch.from_numpy(W).float()
