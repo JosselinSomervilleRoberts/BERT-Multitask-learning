@@ -506,12 +506,9 @@ class KernelLogisticRegression:
         n = X.shape[0]
         alpha = np.zeros(n)
 
-        K = np.zeros((n, n))
-        for i in tqdm(range(n), desc="Computing kernel matrix"):
-            for j in range(n):
-                K[i, j] = self.kernel(X[i], X[j])
+        K = np.dot(X, X.T)
 
-        for iteration in tqdm(range(self.max_iter), desc="Fitting model"):
+        for iteration in range(self.max_iter):
             y_hat = np.dot(K, alpha)
             p = 1 / (1 + np.exp(-y_hat))
             W = np.diag(p * (1 - p))
@@ -521,12 +518,7 @@ class KernelLogisticRegression:
         self.alpha = alpha
 
     def predict_proba(self, X):
-        n = X.shape[0]
-        K = np.zeros((n, self.alpha.shape[0]))
-        for i in range(n):
-            for j in range(K.shape[1]):
-                K[i, j] = self.kernel(X[i], X[j])
-
+        K = np.dot(X, X.T)
         y_hat = np.dot(K, self.alpha)
         proba = 1 / (1 + np.exp(-y_hat))
         return proba
