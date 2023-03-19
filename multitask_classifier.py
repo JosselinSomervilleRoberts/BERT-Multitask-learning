@@ -108,9 +108,11 @@ class MultitaskBERT(nn.Module):
             else:
                 param.requires_grad = False
 
-        hidden_size = 128
-        self.rnn = torch.nn.RNN(input_size=BERT_HIDDEN_SIZE, hidden_size=hidden_size, num_layers=2, batch_first=True)
-        
+        hidden_size = 256
+        self.rnn_sentiment = torch.nn.RNN(input_size=BERT_HIDDEN_SIZE, hidden_size=hidden_size, num_layers=2, batch_first=True)
+        self.rnn_paraphrase = torch.nn.RNN(input_size=BERT_HIDDEN_SIZE, hidden_size=hidden_size, num_layers=2, batch_first=True)
+        self.rnn_similarity = torch.nn.RNN(input_size=BERT_HIDDEN_SIZE, hidden_size=hidden_size, num_layers=2, batch_first=True)
+
         # Step 2: Add a linear layer for sentiment classification
         self.dropout_sentiment = nn.ModuleList([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
         self.linear_sentiment = nn.ModuleList([nn.Linear(hidden_size, hidden_size) for _ in range(config.n_hidden_layers)] + [nn.Linear(hidden_size, N_SENTIMENT_CLASSES)])
@@ -132,10 +134,33 @@ class MultitaskBERT(nn.Module):
             for param in self.linear_similarity.parameters():
                 param.requires_grad = False
 
-        nn.init.xavier_uniform_(self.rnn.weight_ih_l0)
-        nn.init.orthogonal_(self.rnn.weight_hh_l0)
-        nn.init.constant_(self.rnn.bias_ih_l0, 0)
-        nn.init.constant_(self.rnn.bias_hh_l0, 0)
+        nn.init.xavier_uniform_(self.rnn_sentiment.weight_ih_l0)
+        nn.init.orthogonal_(self.rnn_sentiment.weight_hh_l0)
+        nn.init.constant_(self.rnn_sentiment.bias_ih_l0, 0)
+        nn.init.constant_(self.rnn_sentiment.bias_hh_l0, 0)
+        nn.init.xavier_uniform_(self.rnn_sentiment.weight_ih_l1)
+        nn.init.orthogonal_(self.rnn_sentiment.weight_hh_l1)
+        nn.init.constant_(self.rnn_sentiment.bias_ih_l1, 0)
+        nn.init.constant_(self.rnn_sentiment.bias_hh_l1, 0)
+
+        nn.init.xavier_uniform_(self.rnn_paraphrase.weight_ih_l0)
+        nn.init.orthogonal_(self.rnn_paraphrase.weight_hh_l0)
+        nn.init.constant_(self.rnn_paraphrase.bias_ih_l0, 0)
+        nn.init.constant_(self.rnn_paraphrase.bias_hh_l0, 0)
+        nn.init.xavier_uniform_(self.rnn_paraphrase.weight_ih_l1)
+        nn.init.orthogonal_(self.rnn_paraphrase.weight_hh_l1)
+        nn.init.constant_(self.rnn_paraphrase.bias_ih_l1, 0)
+        nn.init.constant_(self.rnn_paraphrase.bias_hh_l1, 0)
+
+        nn.init.xavier_uniform_(self.rnn_similarity.weight_ih_l0)
+        nn.init.orthogonal_(self.rnn_similarity.weight_hh_l0)
+        nn.init.constant_(self.rnn_similarity.bias_ih_l0, 0)
+        nn.init.constant_(self.rnn_similarity.bias_hh_l0, 0)
+        nn.init.xavier_uniform_(self.rnn_similarity.weight_ih_l1)
+        nn.init.orthogonal_(self.rnn_similarity.weight_hh_l1)
+        nn.init.constant_(self.rnn_similarity.bias_ih_l1, 0)
+        nn.init.constant_(self.rnn_similarity.bias_hh_l1, 0)
+        
 
         for i in range(config.n_hidden_layers + 1):
             nn.init.xavier_uniform_(self.linear_sentiment[i].weight)
@@ -161,15 +186,20 @@ class MultitaskBERT(nn.Module):
 
         # Step 2: Get the [CLS] token embeddings
         output = bert_output['last_hidden_state']
-        rnn_output, _ = self.rnn(output)
-        rnn_output = rnn_output[:, -1, :]  # Take the last hidden state of the RNN as the output
-        # cls_embeddings = bert_output['pooler_output']
-        # print("CLS SHAPE: ", cls_embeddings.shape)
-        # print("Last hidden state shape: ", bert_output['last_hidden_state'].shape)
-        return rnn_output
+        return output
+        # rnn_output, _ = self.rnn(output)
+        # rnn_output = rnn_output[:, -1, :]  # Take the last hidden state of the RNN as the output
+        # # cls_embeddings = bert_output['pooler_output']
+        # # print("CLS SHAPE: ", cls_embeddings.shape)
+        # # print("Last hidden state shape: ", bert_output['last_hidden_state'].shape)
+        # return rnn_output
 
     def last_layers_sentiment(self, x):
         """Given a batch of sentences embeddings, outputs logits for classifying sentiment."""
+        # RNN
+        rnn_output, _ = self.rnn_sentiment(x)
+        x = rnn_output[:, -1, :]  # Take the last hidden state of the RNN as the output
+
         # Step 2: Hidden layers
         for i in range(len(self.linear_sentiment) - 1):
             x = self.dropout_sentiment[i](x)
@@ -210,6 +240,10 @@ class MultitaskBERT(nn.Module):
     
     def last_layers_paraphrase(self, x):
         """Given a batch of pairs of sentences embedding, outputs logits for predicting whether they are paraphrases."""
+        # RNN
+        rnn_output, _ = self.rnn_paraphrase(x)
+        x = rnn_output[:, -1, :]  # Take the last hidden state of the RNN as the output
+        
         #Step 2: Hidden layers
         for i in range(len(self.linear_paraphrase) - 1):
             x = self.dropout_paraphrase[i](x)
@@ -235,6 +269,10 @@ class MultitaskBERT(nn.Module):
 
     def last_layers_similarity(self, x):
         """Given a batch of pairs of sentences embeddings, outputs logits for predicting how similar they are."""
+        # RNN
+        rnn_output, _ = self.rnn_similarity(x)
+        x = rnn_output[:, -1, :]  # Take the last hidden state of the RNN as the output
+        
         # Step 3: Hidden layers
         for i in range(len(self.linear_similarity) - 1):
             x = self.dropout_similarity[i](x)
