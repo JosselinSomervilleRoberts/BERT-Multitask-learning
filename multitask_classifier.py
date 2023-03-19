@@ -135,9 +135,9 @@ class MultitaskBERT(nn.Module):
 
         rnn_hidden_size = 256
         fc_hidden_size = 512
-        self.rnn_sentiment = torch.nn.RNN(input_size=BERT_HIDDEN_SIZE, hidden_size=rnn_hidden_size, num_layers=2, batch_first=True)
-        self.rnn_paraphrase = torch.nn.RNN(input_size=BERT_HIDDEN_SIZE, hidden_size=rnn_hidden_size, num_layers=2, batch_first=True)
-        self.rnn_similarity = torch.nn.RNN(input_size=BERT_HIDDEN_SIZE, hidden_size=rnn_hidden_size, num_layers=2, batch_first=True)
+        self.rnn_sentiment = torch.nn.LSTM(input_size=BERT_HIDDEN_SIZE, hidden_size=rnn_hidden_size, num_layers=2, batch_first=True)
+        self.rnn_paraphrase = torch.nn.LSTM(input_size=BERT_HIDDEN_SIZE, hidden_size=rnn_hidden_size, num_layers=2, batch_first=True)
+        self.rnn_similarity = torch.nn.LSTM(input_size=BERT_HIDDEN_SIZE, hidden_size=rnn_hidden_size, num_layers=2, batch_first=True)
 
         # Step 2: Add a linear layer for sentiment classification
         self.dropout_sentiment = nn.ModuleList([nn.Dropout(config.hidden_dropout_prob) for _ in range(config.n_hidden_layers + 1)])
