@@ -644,9 +644,15 @@ def train_multitask(args, writer):
 
         linear = nn.Linear(5,5)
         # Initialize linear layer
-        # Xavier initialization
-        nn.init.xavier_uniform_(linear.weight)
-        nn.init.zeros_(linear.bias)
+        W = np.array([[1, 0.5, 0.1, 0, 0],
+                        [0.4, 1, 0.2, 0, 0],
+                        [0, 0.5, 1, 0.5, 0],
+                        [0, 0, 0.2, 1, 0.4],
+                        [0, 0, 0.1, 0.5, 1]])
+        B = np.array([0, 0, 0, 0, 0])
+        # Init to W
+        linear.weight.data = torch.from_numpy(W).float()
+        linear.bias.data = torch.from_numpy(B).float()
         linear.to(device)
         optimizer = AdamW(linear.parameters(), lr=lr)
 
@@ -658,16 +664,9 @@ def train_multitask(args, writer):
 
             embeddings = model.forward(b_ids, b_mask, task_id=0)
             logits = model.last_layers_sentiment(embeddings)
-            logits = linear(logits)
-
-            loss = F.cross_entropy(logits, b_labels)
-            loss.backward()
 
             correct += (torch.argmax(logits, dim=1) == b_labels).sum().item()
             incorrect += (torch.argmax(logits, dim=1) != b_labels).sum().item()
-
-            optimizer.step()
-            optimizer.zero_grad()
 
         print(Colors.BOLD + Colors.BLUE + "Accuracy on dev set: " + Colors.END + Colors.BLUE + str(correct / (correct + incorrect)) + Colors.END)
 
