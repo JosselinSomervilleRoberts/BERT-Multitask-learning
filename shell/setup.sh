@@ -62,9 +62,6 @@ pip install termcolor==2.2.0
 pip install threadpoolctl==3.1.0
 pip install tokenizer==3.4.2
 pip install tokenizers==0.13.2
-pip install torch==1.9.0+cu111
-pip install torchaudio==0.9.0
-pip install torchvision==0.10.0+cu111
 pip install tqdm==4.58.0
 pip install transformers==4.27.0
 pip install typing_extensions==4.5.0
