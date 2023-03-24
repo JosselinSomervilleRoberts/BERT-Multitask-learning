@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-conda create -n cs224n_dfp_final python=3.8
-conda activate cs224n_dfp_final
+conda create -n cs224n_dfp python=3.8
+conda activate cs224n_dfp
 
 conda install pytorch==1.8.0 torchvision torchaudio cudatoolkit=10.1 -c pytorch
 pip install tqdm==4.58.0
@@ -11,61 +11,3 @@ pip install filelock==3.0.12
 pip install sklearn==0.0
 pip install tokenizers==0.10.1
 pip install explainaboard_client==0.0.7
-pip install absl-py==1.4.0
-pip install astunparse==1.6.3
-pip install cachetools==5.3.0
-pip install certifi==2022.12.7
-pip install chardet==4.0.0
-pip install contourpy==1.0.7
-pip install cycler==0.11.0
-pip install data-science-types==0.2.23
-pip install explainaboard-api-client==0.2.26
-pip install explainaboard-client==0.0.7
-pip install filelock==3.0.12
-pip install flatbuffers==23.3.3
-pip install fonttools==4.38.0
-pip install gast==0.4.0
-pip install google-auth==2.16.2
-pip install google-auth-oauthlib==0.4.6
-pip install google-pasta==0.2.0
-pip install grpcio==1.51.3
-pip install h5py==3.8.0
-pip install huggingface-hub==0.13.2
-pip install keras==2.11.0
-pip install matplotlib==3.7.0
-pip install oauthlib==3.2.2
-pip install opt-einsum==3.3.0
-pip install packaging==23.0
-pip install pandas==1.5.3
-pip install Pillow==9.4.0
-pip install protobuf==3.19.6
-pip install pyasn1==0.4.8
-pip install pyasn1-modules==0.2.8
-pip install pyparsing==3.0.9
-pip install PyYAML==6.0
-pip install regex==2022.10.31
-pip install requests==2.25.1
-pip install requests-oauthlib==1.3.1
-pip install rsa==4.9
-pip install scikit-learn==1.2.1
-pip install scipy==1.10.1
-pip install seaborn==0.12.2
-pip install sklearn==0.0
-pip install smart-pytorch==0.0.4
-pip install tensorboard==2.11.2
-pip install tensorboard-data-server==0.6.1
-pip install tensorboard-plugin-wit==1.8.1
-pip install tensorflow==2.11.0
-pip install tensorflow-estimator==2.11.0
-pip install tensorflow-io-gcs-filesystem==0.31.0
-pip install termcolor==2.2.0
-pip install threadpoolctl==3.1.0
-pip install tokenizer==3.4.2
-pip install tokenizers==0.13.2
-pip install tqdm==4.58.0
-pip install transformers==4.27.0
-pip install typing_extensions==4.5.0
-pip install urllib3==1.26.14
-pip install Werkzeug==2.2.3
-pip install wrapt==1.15.0
-pip install zipp==3.15.0
