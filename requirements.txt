@@ -1,4 +1,4 @@
-python==3.8.12
+python==3.8
 boto3==1.26.70
 filelock==3.10.4
 importlib_metadata==6.0.0
