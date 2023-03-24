@@ -255,6 +255,7 @@ class ObjectsGroup:
         self.loss_sum = 0
 
 class Scheduler:
+    '''A class to manage the learning rate scheduler.'''
 
     def __init__(self, dataloaders, reset=True):
         self.dataloaders = dataloaders
@@ -295,6 +296,7 @@ class Scheduler:
         raise ValueError(f"Unknown batch name: {name}")
 
     def process_named_batch(self, objects_group: ObjectsGroup, args: dict, name: str, apply_optimization: bool = True):
+        '''Processes a batch of data from the given dataset, and updates the model accordingly.'''
         batch = self.get_batch(name)
         process_fn, gradient_accumulations = None, 0
         if name == "sst":
@@ -322,7 +324,7 @@ class Scheduler:
 
 
 class RandomScheduler(Scheduler):
-
+    '''A scheduler that randomly chooses a batch to process.'''
     def __init__(self, dataloaders):
         super().__init__(dataloaders, reset=True)
 
@@ -332,7 +334,7 @@ class RandomScheduler(Scheduler):
 
 
 class RoundRobinScheduler(Scheduler):
-
+    '''A scheduler that processes batches in a round-robin fashion.'''
     def __init__(self, dataloaders):
         super().__init__(dataloaders, reset=False)
         self.reset()
@@ -348,13 +350,14 @@ class RoundRobinScheduler(Scheduler):
 
 
 class PalScheduler(Scheduler):
-
+    '''A scheduler that processes batches following the PAL implementation.'''
     def __init__(self, dataloaders):
         super().__init__(dataloaders, reset=False)
         self.sizes = np.array([len(dataloaders[dataset]) for dataset in self.names])
         self.reset()
 
     def process_one_batch(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict, apply_optimization: bool = True):
+        '''Processes a batch of data from the given dataset, and updates the model accordingly.'''
         alpha = 0.2
         if num_epochs > 1: alpha = 1 - 0.8 * (epoch - 1) / (num_epochs - 1) 
         probs = self.sizes ** alpha
@@ -388,6 +391,8 @@ class PalScheduler(Scheduler):
 
 
 def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
+    '''This function processes a batch of SST data. It takes as input a batch of data, a group of objects (model, optimizer, scheduler, etc.), 
+    and the arguments. It returns the loss of the batch.'''
     device = args.device
     model, scaler = objects_group.model, objects_group.scaler
 
@@ -401,6 +406,7 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
         
+        #To use smart_regularization
         if args.use_smart_regularization:
             smart_regularization(loss_value, args.smart_weight_regularization, embeddings, logits, model.last_layers_sentiment)
 
@@ -413,6 +419,8 @@ def process_sentiment_batch(batch, objects_group: ObjectsGroup, args: dict):
 
 
 def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
+    '''This function processes a batch of paraphrase data. It takes as input a batch of data, 
+    a group of objects (model, optimizer, scheduler, etc.), and the arguments. It returns the loss of the batch.'''
     device = args.device
     model, scaler = objects_group.model, objects_group.scaler
 
@@ -425,6 +433,7 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss = F.binary_cross_entropy_with_logits(preds.view(-1), b_labels.float(), reduction='sum') / args.batch_size
         loss_value = loss.item()
 
+        #To use smart_regularization
         if args.use_smart_regularization:
             smart_regularization(loss_value, args.smart_weight_regularization, embeddings, preds, model.last_layers_paraphrase)
 
@@ -437,6 +446,8 @@ def process_paraphrase_batch(batch, objects_group: ObjectsGroup, args: dict):
 
 
 def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
+    '''This function processes a batch of similarity data. It takes as input a batch of data,
+    a group of objects (model, optimizer, scheduler, etc.), and the arguments. It returns the loss of the batch.'''
     device = args.device
     model, scaler = objects_group.model, objects_group.scaler
 
@@ -449,6 +460,7 @@ def process_similarity_batch(batch, objects_group: ObjectsGroup, args: dict):
         loss = F.mse_loss(preds.view(-1), b_labels.view(-1), reduction='sum') / args.batch_size
         loss_value = loss.item()
 
+        #To use smart_regularization
         if args.use_smart_regularization:
             smart_regularization(loss_value, args.smart_weight_regularization, embeddings, preds, model.last_layers_similarity)
 
@@ -485,6 +497,7 @@ def finish_training_batch(objects_group: ObjectsGroup, args: dict, step: int, gr
 
 
 def save_model(model, optimizer, args, config, filepath):
+    '''This function saves the model. It takes as input the model, the optimizer, the arguments, the config, and the filepath.'''
     save_info = {
         'model': model.state_dict(),
         'optim': optimizer.state_dict(),
@@ -501,6 +514,8 @@ def save_model(model, optimizer, args, config, filepath):
 
 
 def train_multitask(args, writer):
+    '''This function trains the model on the SST, Quora and STS datasets. It takes as input the arguments 
+    and the writer for tensorboard.'''
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
     # Load data
     # Create the data and its corresponding datasets and dataloaders
@@ -999,6 +1014,7 @@ def train_multitask(args, writer):
 
 
 def load_model(model, filepath):
+    '''Loads a model from a file'''
     with torch.no_grad():
         saved = torch.load(filepath)
         config = saved['model_config']
@@ -1007,6 +1023,7 @@ def load_model(model, filepath):
         return config
 
 def test_model(args):
+    '''Tests a model'''
     with torch.no_grad():
         device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
         saved = torch.load(args.filepath)
@@ -1034,6 +1051,7 @@ def warn(message: str, color: str = Colors.RED) -> None:
     print(color + "WARNING: " + message + Colors.END)
 
 def get_args():
+    '''Parses the command line arguments'''
     parser = argparse.ArgumentParser()
     parser.add_argument("--sst_train", type=str, default="data/ids-sst-train.csv")
     parser.add_argument("--sst_dev", type=str, default="data/ids-sst-dev.csv")

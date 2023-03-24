@@ -12,6 +12,9 @@ This project was the default final project of the class CS224N at Stanford for t
 
 ***We finished first (both on the Dev and the Test set) amonst approximately 140 teams.***
 
+## Installing the requirements
+To install the requirements, run the command `source set_up.sh`. This will create and install the conda environment `cs224n_dfp` with all needed requirements. 
+
 ## Running the code
 We grouped everything ine one script `multitask_classifier.py`. You can call this script with many parameters to choose what you want to do. Here is a quick overview of the most important parameters (Feel free to run `python multitask_classifier.py --help` to get more info):
 - `--option [OPTION]`, with `[OPTION] = test, pretrain, individual_pretrain, finetune`. Chosses what you want to do with the model.
