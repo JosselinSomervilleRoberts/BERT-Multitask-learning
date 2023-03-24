@@ -296,6 +296,7 @@ class Scheduler:
         raise ValueError(f"Unknown batch name: {name}")
 
     def process_named_batch(self, objects_group: ObjectsGroup, args: dict, name: str, apply_optimization: bool = True):
+        '''Processes a batch of data from the given dataset, and updates the model accordingly.'''
         batch = self.get_batch(name)
         process_fn, gradient_accumulations = None, 0
         if name == "sst":
@@ -356,6 +357,7 @@ class PalScheduler(Scheduler):
         self.reset()
 
     def process_one_batch(self, epoch: int, num_epochs: int, objects_group: ObjectsGroup, args: dict, apply_optimization: bool = True):
+        '''Processes a batch of data from the given dataset, and updates the model accordingly.'''
         alpha = 0.2
         if num_epochs > 1: alpha = 1 - 0.8 * (epoch - 1) / (num_epochs - 1) 
         probs = self.sizes ** alpha
@@ -495,6 +497,7 @@ def finish_training_batch(objects_group: ObjectsGroup, args: dict, step: int, gr
 
 
 def save_model(model, optimizer, args, config, filepath):
+    '''This function saves the model. It takes as input the model, the optimizer, the arguments, the config, and the filepath.'''
     save_info = {
         'model': model.state_dict(),
         'optim': optimizer.state_dict(),
