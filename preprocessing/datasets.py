@@ -16,6 +16,7 @@ from preprocessing.tokenizer import BertTokenizer
 
 
 def preprocess_string(s):
+    '''Preprocesses a string by lowercasing it and adding spaces around punctuation.'''
     return ' '.join(s.lower()
                     .replace('.', ' .')
                     .replace('?', ' ?')
@@ -25,6 +26,8 @@ def preprocess_string(s):
 
 
 class SentenceClassificationDataset(Dataset):
+    '''This class is a wrapper around the dataset with one sentence inputs that we will use to train our model.
+    (ie. the SST dataset)'''
     def __init__(self, dataset, args):
         self.dataset = dataset
         self.p = args
@@ -37,7 +40,7 @@ class SentenceClassificationDataset(Dataset):
         return self.dataset[idx]
 
     def pad_data(self, data):
-
+        '''This function pads the data to the max length of the batch.'''
         sents = [x[0] for x in data]
         labels = [x[1] for x in data]
         sent_ids = [x[2] for x in data]
@@ -64,6 +67,8 @@ class SentenceClassificationDataset(Dataset):
 
 
 class SentenceClassificationTestDataset(Dataset):
+    '''This class is a wrapper around the dataset with one sentence inputs that we will use to test our model.
+    (ie. the SST dataset)'''
     def __init__(self, dataset, args):
         self.dataset = dataset
         self.p = args
@@ -76,6 +81,7 @@ class SentenceClassificationTestDataset(Dataset):
         return self.dataset[idx]
 
     def pad_data(self, data):
+        '''This function pads the data to the max length of the batch.'''
         sents = [x[0] for x in data]
         sent_ids = [x[1] for x in data]
 
@@ -99,6 +105,8 @@ class SentenceClassificationTestDataset(Dataset):
 
 
 class SentencePairDataset(Dataset):
+    '''This class is a wrapper around the dataset with pair sentences that we will use to train our model.
+    (ie. A class for handling the SemEval and Quora datasets.)'''
     def __init__(self, dataset, args, isRegression =False):
         self.dataset = dataset
         self.p = args
@@ -112,6 +120,7 @@ class SentencePairDataset(Dataset):
         return self.dataset[idx]
 
     def pad_data(self, data):
+        '''This function pads the data to the max length of the batch.'''
         sent1 = [x[0] for x in data]
         sent2 = [x[1] for x in data]
         labels = [x[2] for x in data]
@@ -157,6 +166,8 @@ class SentencePairDataset(Dataset):
 
 
 class SentencePairTestDataset(Dataset):
+    '''This class is a wrapper around the dataset with pair sentences that we will use to test our model.
+    (ie. A class for handling the SemEval and Quora datasets.)'''
     def __init__(self, dataset, args):
         self.dataset = dataset
         self.p = args
@@ -169,6 +180,7 @@ class SentencePairTestDataset(Dataset):
         return self.dataset[idx]
 
     def pad_data(self, data):
+        '''This function pads the data to the max length of the batch'''
         sent1 = [x[0] for x in data]
         sent2 = [x[1] for x in data]
         sent_ids = [x[2] for x in data]
@@ -208,6 +220,7 @@ class SentencePairTestDataset(Dataset):
 
 
 def load_multitask_test_data():
+    '''This function loads the test datasets for the multitask dataset.'''
     paraphrase_filename = f'data/quora-test.csv'
     sentiment_filename = f'data/ids-sst-test.txt'
     similarity_filename = f'data/sts-test.csv'
@@ -246,6 +259,7 @@ def load_multitask_test_data():
 
 
 def load_multitask_data(sentiment_filename,paraphrase_filename,similarity_filename,split='train'):
+    '''This function loads the training datasets for the multitask dataset'''
     sentiment_data = []
     num_labels = {}
     if split == 'test':

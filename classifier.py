@@ -17,6 +17,7 @@ from tqdm import tqdm
 TQDM_DISABLE=False
 # fix the random seed
 def seed_everything(seed=11711):
+    '''This function sets random seeds for reproducibility.'''
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -65,9 +66,8 @@ class BertSentimentClassifier(torch.nn.Module):
 
         
 
-
-
 class SentimentDataset(Dataset):
+    '''Dataset class for the SST dataset.'''
     def __init__(self, dataset, args):
         self.dataset = dataset
         self.p = args
@@ -80,7 +80,7 @@ class SentimentDataset(Dataset):
         return self.dataset[idx]
 
     def pad_data(self, data):
-        
+        '''This function pads the data to the maximum length of the batch.'''
         sents = [x[0] for x in data]
         labels = [x[1] for x in data]
         sent_ids = [x[2] for x in data]
@@ -118,7 +118,7 @@ class SentimentTestDataset(Dataset):
         return self.dataset[idx]
 
     def pad_data(self, data):
-        
+        '''This function pads the data to the maximum length of the batch. '''
         sents = [x[0] for x in data]
         sent_ids = [x[1] for x in data]
 
@@ -142,6 +142,7 @@ class SentimentTestDataset(Dataset):
 
 # Load the data: a list of (sentence, label)
 def load_data(filename, flag='train'):
+    '''This function loads the data from the given filename.'''
     num_labels = {}
     data = []
     if flag == 'test':
@@ -168,6 +169,7 @@ def load_data(filename, flag='train'):
 
 # Evaluate the model for accuracy.
 def model_eval(dataloader, model, device):
+    '''This function evaluates the model on the given dataloader.'''
     model.eval() # switch to eval model, will turn off randomness like dropout
     y_true = []
     y_pred = []
@@ -177,7 +179,6 @@ def model_eval(dataloader, model, device):
         b_ids, b_mask, b_labels, b_sents, b_sent_ids = batch['token_ids'],batch['attention_mask'],  \
                                                         batch['labels'], batch['sents'], batch['sent_ids']
                                                       
-
         b_ids = b_ids.to(device)
         b_mask = b_mask.to(device)
 
@@ -206,7 +207,6 @@ def model_test_eval(dataloader, model, device):
         b_ids, b_mask, b_sents, b_sent_ids = batch['token_ids'],batch['attention_mask'],  \
                                                          batch['sents'], batch['sent_ids']
                                                       
-
         b_ids = b_ids.to(device)
         b_mask = b_mask.to(device)
 
@@ -222,6 +222,7 @@ def model_test_eval(dataloader, model, device):
 
 
 def save_model(model, optimizer, args, config, filepath):
+    '''Save the model to the given filepath.'''
     save_info = {
         'model': model.state_dict(),
         'optim': optimizer.state_dict(),
@@ -237,6 +238,7 @@ def save_model(model, optimizer, args, config, filepath):
 
 
 def train(args):
+    '''This function trains the model. It takes in the arguments from the command line.'''
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
     # Load data
     # Create the data and its corresponding datasets and dataloader
@@ -334,7 +336,9 @@ def test(args):
             f.write(f"id \t Predicted_Sentiment \n")
             for p, s  in zip(test_sent_ids,test_pred ):
                 f.write(f"{p} , {s} \n")
+
 def get_args():
+    '''This function parses and return arguments passed in'''
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=11711)
     parser.add_argument("--epochs", type=int, default=10)

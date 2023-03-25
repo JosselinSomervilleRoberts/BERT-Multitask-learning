@@ -6,6 +6,7 @@ from torch.optim import Optimizer
 
 
 class AdamW(Optimizer):
+    """Implements AdamW algorithm."""
     def __init__(
             self,
             params: Iterable[torch.nn.parameter.Parameter],
@@ -27,6 +28,8 @@ class AdamW(Optimizer):
         super().__init__(params, defaults)
 
     def step(self, closure: Callable = None):
+        '''This function implements the AdamW algorithm based on Decoupled Weight Decay Regularization and Adam:
+         A Method for Stochastic Optimization in order to train a sentiment classifier'''
         loss = None
         if closure is not None:
             loss = closure()
