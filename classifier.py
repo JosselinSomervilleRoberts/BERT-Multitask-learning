@@ -305,6 +305,7 @@ def train(args):
 
 
 def test(args):
+    '''This function tests the model. It takes in the arguments from the command line.'''
     with torch.no_grad():
         device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
         saved = torch.load(args.filepath)

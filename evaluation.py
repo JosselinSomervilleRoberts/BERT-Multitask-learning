@@ -32,6 +32,7 @@ TQDM_DISABLE = False
 
 # Evaluate a multitask model for accuracy.on SST only.
 def model_eval_sst(dataloader, model, device):
+    '''Evaluate a model on the SST dataset only.'''
     model.eval()  # switch to eval model, will turn off randomness like dropout
     y_true = []
     y_pred = []
@@ -62,6 +63,7 @@ def model_eval_sst(dataloader, model, device):
 
 
 def model_eval_paraphrase(paraphrase_dataloader, model, device):
+    '''Evaluate a model on the paraphrase detection dataset.'''
     model.eval()  # switch to eval model, will turn off randomness like dropout
 
     with torch.no_grad():
@@ -96,6 +98,7 @@ def model_eval_paraphrase(paraphrase_dataloader, model, device):
 
 
 def model_eval_sts(sts_dataloader, model, device):
+    '''Evaluate a model on the semantic textual similarity dataset.'''
     model.eval()  # switch to eval model, will turn off randomness like dropout
 
     with torch.no_grad():
@@ -130,6 +133,7 @@ def model_eval_sts(sts_dataloader, model, device):
 
 
 def model_eval_sentiment(sentiment_dataloader, model, device):
+    '''Evaluate a model on the sentiment classification dataset.'''
     model.eval()  # switch to eval model, will turn off randomness like dropout
 
     with torch.no_grad():
@@ -162,6 +166,7 @@ def model_eval_multitask(sentiment_dataloader,
                          paraphrase_dataloader,
                          sts_dataloader,
                          model, device, writer = None, epoch = None, tensorboard = False):
+    '''Evaluate a model on the sentiment classification, paraphrase detection, and semantic textual similarity datasets.'''
     paraphrase_accuracy, para_y_true, para_y_pred, para_sent_ids = model_eval_paraphrase(paraphrase_dataloader, model, device)
     sts_corr, sts_y_true, sts_y_pred, sts_sent_ids = model_eval_sts(sts_dataloader, model, device)
     sentiment_accuracy, sst_y_true, sst_y_pred, sst_sent_ids = model_eval_sentiment(sentiment_dataloader, model, device)
