@@ -27,6 +27,26 @@ We grouped everything ine one script `multitask_classifier.py`. You can call thi
 - Some hyperparameters: `--lr [LR]` for the learning rate, `--epochs [EPOCHS]` for the number of epochs, `--num_batches_per_epoch [NB]` for the number of batches per epoch *(Not always apllicable depending on your scheduler)*, `--batch_size [BATCH-SIZE]` for the batch_size, `--batch_size_sts [BATCH-SIZE]` (valid for `sts`, `sst` and `para`) to reduce the batch size of a specific task using **gradient accumulations**.
 - More arguments using `--help`.
 
+## Example of how to train a working model from pretraining to finetuning
+
+First, you can run the pretraining phase with the option `individual_pretrain`. 
+
+`python3 multitask_classifier.py --option individual_pretrain --epochs 3 --lr 1e-3 --batch_size 256 --hidden_dropout_prob 0.2 --use_gpu --use_amp --patience 3 --n_hidden_layers 1 --max_batch_size_sst 256 --max_batch_size_para 32 --max_batch_size_sts 128`
+
+The command above will save a model in runs as a pt file. The name of the file will be indicated in the terminal under `Evaluation Multitask` section after `Saved model to:` in blue. For now, let us denote the model `INDIVIDUAL_PRETRAIN_MODEL.PT`.
+
+Second, you can run the beginning of the finetuning phase and load the previous aforementionned pretraining model that is saved in `runs`. The learning rate is 1e-5 to start. 
+
+`python3 multitask_classifier.py --pretrained_model_name [INDIVIDUAL_PRETRAIN_MODEL.PT] --option finetune --epochs 10 --lr 1e-5 --batch_size 128 --hidden_dropout_prob 0.2 --use_gpu --num_batches_per_epoch 300 --task_scheduler pal --use_amp --patience 3 --n_hidden_layers 1`
+
+The command above will save a model in runs as a pt file. The name of the file will be indicated in the terminal section after `Saved model to:` in pink. For now, let us denote the model `FINETUNE_MODEL.PT`.
+
+Finally, you can finish the finetuning phase and load the previous aforementionned finetuned model that is saved in `runs`. We set manually the learning rate is 1e-6 to start. 
+
+`python3 multitask_classifier.py --pretrained_model_name [FINETUNE_MODEL.PT] --option finetune --epochs 10 --lr 5e-6 --batch_size 32 --hidden_dropout_prob 0.2 --use_gpu --num_batches_per_epoch 1800 --projection vaccine --use_amp --patience 3 --n_hidden_layers 1  --max_batch_size_sst 16 --max_batch_size_para 16 --max_batch_size_sts 16`
+
+The command above will save a final model in runs as a pt file. The name of the file will be indicated in the terminal section after `Saved model to:` in pink. 
+
 ## Running tensorboard
 
 ### Data available
@@ -49,7 +69,7 @@ If you are running this on AWS EC, follow these steps:
 3. Open a local terminal and create an SSH tunnel: `ssh -i <YOUR-KEY-PATH> -NL 6006:localhost:6006 ec2-user@<YOUR-PUBLIC-IP>`
 4. In the browser, visit: `http://localhost:6006/`
 
-## Using our models
+## Using our models (Please ignore this section for now, the models were too heavy and we had to take them down for the time being.)
 Our trained models are located in `models/`. To download them you will need `git-lfs`. You cna install `git-lfs` locally by running *(source [here](https://stackoverflow.com/questions/48734119/git-lfs-is-not-a-git-command-unclear))*
 ```bash
 curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash
