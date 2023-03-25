@@ -47,6 +47,7 @@ class BertSelfAttention(nn.Module):
     return proj
 
   def attention(self, key, query, value, attention_mask):
+    '''This function calculates the multi-head attention following the original implementation of transformer.'''
     # each attention is calculated following eq (1) of https://arxiv.org/pdf/1706.03762.pdf
     # attention scores are calculated by multiply query and key 
     # and get back a score matrix S of [bs, num_attention_heads, seq_len, seq_len]
