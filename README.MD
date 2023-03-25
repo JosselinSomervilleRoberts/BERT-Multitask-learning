@@ -16,7 +16,7 @@ This project was the default final project of the class CS224N at Stanford for t
 To install the requirements, run the command `conda create --name cs224n_dfp_final --file spec-file.txt`. This will create and install the conda environment `cs224n_dfp_final` with all needed requirements. 
 
 ## Running the code
-We grouped everything ine one script `multitask_classifier.py`. You can call this script with many parameters to choose what you want to do. Here is a quick overview of the most important parameters (Feel free to run `python multitask_classifier.py --help` to get more info):
+We grouped everything in one script `multitask_classifier.py`. You can call this script with many parameters to choose what you want to do. Here is a quick overview of the most important parameters (Feel free to run `python multitask_classifier.py --help` to get more info):
 - `--option [OPTION]`, with `[OPTION] = test, pretrain, individual_pretrain, finetune`. Chosses what you want to do with the model.
 - `--use_gpu`, `--use_amp` to run the code on GPU and use AMP (Automated Mixed Precision) in order to have the best performances.
 - `--pretrained_model_name [PATH]` with `[PATH]` the path to you `*.pt` file containing the model.
