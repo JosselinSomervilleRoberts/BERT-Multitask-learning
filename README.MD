@@ -88,6 +88,6 @@ The performances of the models are summarized here:
 | Model                | SST     | Para    | STS     | Mean    |
 | --------             | ------- | ------- | ------- | ------- |
 | Bert_hidden1         | 0.52044 | 0.88319 | 0.87146 | 0.75836 |
-| BertPal_hidden1      | TODO    | TODO    | TODO    | TODO    |
-| Bert_pretrained1     | TODO    | TODO    | TODO    | TODO    |
-| Bert_fast_finetuned1 | TODO    | TODO    | TODO    | TODO    | 
+| BertPal_hidden1      | -    | -    | -    | -    |
+| Bert_pretrained1     | -    | -    | -    | -    |
+| Bert_fast_finetuned1 | -    | -    | -    | -    | 
